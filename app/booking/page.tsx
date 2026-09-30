@@ -1,13 +1,5 @@
-"use client";
-
-import BookingForm from "@/app/components/BookingForm";
+import { redirect } from "next/navigation";
 
 export default function BookingPage() {
-  return (
-    <div className="bk-page-root">
-      {/* Subtle decorative background */}
-      <div className="bk-page-bg" />
-      <BookingForm isModal={false} />
-    </div>
-  );
+  redirect("/dashboard/patient?view=book");
 }

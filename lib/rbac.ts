@@ -5,7 +5,16 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import type { User } from "@supabase/supabase-js";
 
-export type UserRole = "superadmin" | "doctor" | "patient";
+export type UserRole = "superadmin" | "doctor" | "secretary" | "patient";
+
+export const ALL_ROLES: UserRole[] = ["superadmin", "doctor", "secretary", "patient"];
+
+export const ROLE_PERMISSIONS = {
+  superadmin: ["appointments:read", "appointments:write", "patients:read", "clinical:read", "clinical:write", "reports:read", "settings:write", "users:manage"],
+  doctor: ["appointments:read", "appointments:write", "patients:read", "clinical:read", "clinical:write", "reports:read", "settings:write", "users:manage"],
+  secretary: ["appointments:read", "appointments:write", "patients:read"],
+  patient: ["appointments:read:own", "appointments:create:own", "clinical:read:own"],
+} as const satisfies Record<UserRole, readonly string[]>;
 
 /**
  * Known administrative emails for fail-safe RBAC resolution
@@ -21,9 +30,11 @@ export const KNOWN_ADMIN_EMAILS: Record<string, UserRole> = {
 export function getDashboardRoute(role: UserRole): string {
   switch (role) {
     case "superadmin":
-      return "/dashboard/admin";
+      return "/dashboard/doctor";
     case "doctor":
       return "/dashboard/doctor";
+    case "secretary":
+      return "/dashboard/secretary";
     case "patient":
     default:
       return "/dashboard/patient";
@@ -34,9 +45,8 @@ export function getDashboardRoute(role: UserRole): string {
  * Resolves the role of a user from:
  * 1. Hardcoded administrative email whitelist (bulletproof fallback)
  * 2. Supabase Auth app_metadata.role (set by admin)
- * 3. Supabase Auth user_metadata.role (set on signup/profile)
- * 4. Supabase profiles table role
- * 5. Defaults to "patient"
+ * 3. Supabase profiles table role
+ * 4. Defaults to "patient"
  */
 export async function resolveUserRole(user: User | null): Promise<UserRole> {
   if (!user) return "patient";
@@ -51,20 +61,13 @@ export async function resolveUserRole(user: User | null): Promise<UserRole> {
   // 2. app_metadata (secure claim set by service role)
   if (user.app_metadata && user.app_metadata.role) {
     const appRole = user.app_metadata.role as UserRole;
-    if (["superadmin", "doctor", "patient"].includes(appRole)) {
+    if (ALL_ROLES.includes(appRole)) {
       return appRole;
     }
   }
 
-  // 3. user_metadata
-  if (user.user_metadata && user.user_metadata.role) {
-    const metaRole = user.user_metadata.role as UserRole;
-    if (["superadmin", "doctor", "patient"].includes(metaRole)) {
-      return metaRole;
-    }
-  }
-
-  // 4. Supabase public.profiles table (if table exists)
+  // 3. Supabase public.profiles table (if table exists). Never trust
+  // user_metadata for staff roles because users can edit that metadata.
   try {
     const { data, error } = await supabase
       .from("profiles")
@@ -73,7 +76,8 @@ export async function resolveUserRole(user: User | null): Promise<UserRole> {
       .maybeSingle();
 
     if (!error && data && data.role) {
-      return data.role as UserRole;
+      const profileRole = data.role as UserRole;
+      if (ALL_ROLES.includes(profileRole)) return profileRole;
     }
   } catch {
     // If table doesn't exist yet, proceed gracefully
@@ -93,12 +97,8 @@ export function getFastUserRole(user: User | null): UserRole {
     return KNOWN_ADMIN_EMAILS[emailLower];
   }
 
-  if (user.app_metadata?.role && ["superadmin", "doctor", "patient"].includes(user.app_metadata.role)) {
+  if (user.app_metadata?.role && ALL_ROLES.includes(user.app_metadata.role as UserRole)) {
     return user.app_metadata.role as UserRole;
-  }
-
-  if (user.user_metadata?.role && ["superadmin", "doctor", "patient"].includes(user.user_metadata.role)) {
-    return user.user_metadata.role as UserRole;
   }
 
   return "patient";
@@ -143,12 +143,7 @@ export function useRoleAuth(allowedRoles: UserRole[]) {
 
         // RBAC access check
         if (!allowedRolesKey.split("|").includes(resolvedRole)) {
-          // If superadmin, allow viewing other dashboards, otherwise redirect to user's assigned dashboard
-          if (resolvedRole === "superadmin") {
-            // Superadmin can view any dashboard
-            return;
-          }
-          // Redirect unauthorized user to their proper dashboard
+          // Redirect unauthorized users to their assigned workspace.
           router.replace(getDashboardRoute(resolvedRole));
         }
       } catch (err) {

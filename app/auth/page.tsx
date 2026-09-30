@@ -1,14 +1,24 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { useEffect, useState, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { resolveUserRole, getDashboardRoute, type UserRole } from "@/lib/rbac";
 
 /* ─── Types ────────────────────────────────────────── */
-export type AuthMode = "signin" | "signup" | "forgot";
+export type AuthMode = "signin" | "signup" | "forgot" | "reset";
 type Modal = "none" | "terms" | "cancellation";
+type FieldErrors = Partial<Record<"email" | "password" | "confirmPassword" | "agreements", string>>;
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function passwordValidationMessage(value: string) {
+  if (value.length < 10 || !/[a-z]/.test(value) || !/[A-Z]/.test(value) || !/\d/.test(value) || !/[^A-Za-z0-9]/.test(value)) {
+    return "Password must be at least 10 characters and include uppercase, lowercase, number, and special character.";
+  }
+  return "";
+}
 
 /* ─── Terms content ────────────────────────────────── */
 const TERMS_SECTIONS = [
@@ -108,15 +118,28 @@ function PolicyModal({
   const sections = isTerms ? TERMS_SECTIONS : CANCELLATION_SECTIONS;
   const title = isTerms ? "Terms & Conditions" : "Cancellation Policy";
 
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [onClose]);
+
   return (
     <div
       className="policy-modal-overlay"
       role="dialog"
       aria-modal="true"
-      aria-label={title}
+      aria-labelledby={`policy-modal-${type}-title`}
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div className="policy-modal-card">
+      <div className="policy-modal-card" onClick={(event) => event.stopPropagation()}>
         <div className="policy-modal-header">
           <div className="policy-modal-header-left">
             <i
@@ -124,7 +147,7 @@ function PolicyModal({
               style={{ color: "#c57171" }}
             />
             <div>
-              <h2 className="policy-modal-title">{title}</h2>
+              <h2 id={`policy-modal-${type}-title`} className="policy-modal-title">{title}</h2>
               <p className="policy-modal-updated">Last updated: September 2026 · The Klinique CDO</p>
             </div>
           </div>
@@ -173,6 +196,7 @@ export function AuthView({ initialMode = "signin" }: { initialMode?: AuthMode })
   const router = useRouter();
   const searchParams = useSearchParams();
   const bookingDestination = searchParams.get("next");
+  const isEmailConfirmation = searchParams.get("verified") === "1";
   const postAuthDestination = bookingDestination?.startsWith("/") && !bookingDestination.startsWith("//")
     ? bookingDestination
     : null;
@@ -180,7 +204,7 @@ export function AuthView({ initialMode = "signin" }: { initialMode?: AuthMode })
   /* ── Form state ── */
   const queryMode = searchParams.get("mode") as AuthMode | null;
   const [mode, setMode] = useState<AuthMode>(
-    queryMode && ["signin", "signup", "forgot"].includes(queryMode)
+    queryMode && ["signin", "signup", "forgot", "reset"].includes(queryMode)
       ? queryMode
       : initialMode
   );
@@ -197,11 +221,17 @@ export function AuthView({ initialMode = "signin" }: { initialMode?: AuthMode })
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [modal, setModal] = useState<Modal>("none");
 
   const clearMessages = () => {
     setError("");
     setSuccessMsg("");
+    setFieldErrors({});
+  };
+
+  const clearFieldError = (field: keyof FieldErrors) => {
+    setFieldErrors((current) => ({ ...current, [field]: undefined }));
   };
 
   const switchMode = (next: AuthMode) => {
@@ -209,21 +239,81 @@ export function AuthView({ initialMode = "signin" }: { initialMode?: AuthMode })
     setMode(next);
   };
 
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "PASSWORD_RECOVERY") {
+        clearMessages();
+        setMode("reset");
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    async function handleExistingSession() {
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (!active) return;
+
+      if (isEmailConfirmation) {
+        if (session) await supabase.auth.signOut();
+        if (active) {
+          setMode("signin");
+          setPassword("");
+          setConfirmPassword("");
+          setError(sessionError || !session ? "We could not verify this confirmation link. It may be invalid or expired." : "");
+          setSuccessMsg(session ? "Your account is verified. Please sign in to continue." : "");
+          router.replace("/signin");
+        }
+        return;
+      }
+
+      if (mode === "reset") {
+        if (sessionError || !session) {
+          setError("This password reset link is invalid or has expired. Request a new link.");
+        }
+        return;
+      }
+
+      if (session?.user && (mode === "signin" || mode === "signup")) {
+        const role = await resolveUserRole(session.user);
+        if (active) router.replace(postAuthDestination || getDashboardRoute(role));
+      }
+    }
+
+    void handleExistingSession();
+    return () => {
+      active = false;
+    };
+  }, [isEmailConfirmation, mode, postAuthDestination, router]);
+
   /* ── Sign In ── */
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     clearMessages();
+    const cleanEmail = email.trim().toLowerCase();
+    const errors: FieldErrors = {};
+    if (!EMAIL_PATTERN.test(cleanEmail)) errors.email = "Enter a valid email address.";
+    if (!password) errors.password = "Enter your password.";
+    if (Object.keys(errors).length) {
+      setFieldErrors(errors);
+      setError("Please fix the highlighted fields.");
+      return;
+    }
     setLoading(true);
 
     try {
-      const cleanEmail = email.trim();
       const { data, error: signInError } = await supabase.auth.signInWithPassword({
         email: cleanEmail,
         password,
       });
 
       if (signInError) {
-        setError(signInError.message);
+        setError(signInError.message.toLowerCase().includes("email not confirmed")
+          ? "Please confirm your email before signing in."
+          : "The email or password is incorrect.");
         return;
       }
 
@@ -247,22 +337,22 @@ export function AuthView({ initialMode = "signin" }: { initialMode?: AuthMode })
     e.preventDefault();
     clearMessages();
 
-    if (password !== confirmPassword) {
-      setError("Passwords do not match.");
-      return;
-    }
-    if (password.length < 8) {
-      setError("Password must be at least 8 characters.");
-      return;
-    }
-    if (!agreedTerms || !agreedPolicy) {
-      setError("Please agree to both the Terms and Cancellation Policy.");
+    const cleanEmail = email.trim().toLowerCase();
+    const errors: FieldErrors = {};
+    if (!EMAIL_PATTERN.test(cleanEmail)) errors.email = "Enter a valid email address.";
+    const passwordError = passwordValidationMessage(password);
+    if (passwordError) errors.password = passwordError;
+    if (!confirmPassword) errors.confirmPassword = "Confirm your password.";
+    else if (password !== confirmPassword) errors.confirmPassword = "Passwords do not match.";
+    if (!agreedTerms || !agreedPolicy) errors.agreements = "Accept both policies to create an account.";
+    if (Object.keys(errors).length) {
+      setFieldErrors(errors);
+      setError("Please fix the highlighted fields.");
       return;
     }
 
     setLoading(true);
     try {
-      const cleanEmail = email.trim();
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: cleanEmail,
         password,
@@ -271,7 +361,7 @@ export function AuthView({ initialMode = "signin" }: { initialMode?: AuthMode })
             role: "patient",
             full_name: cleanEmail.split("@")[0],
           },
-          emailRedirectTo: `${window.location.origin}/signin`,
+          emailRedirectTo: `${window.location.origin}/auth?verified=1${postAuthDestination ? `&next=${encodeURIComponent(postAuthDestination)}` : ""}`,
         },
       });
 
@@ -303,16 +393,18 @@ export function AuthView({ initialMode = "signin" }: { initialMode?: AuthMode })
     e.preventDefault();
     clearMessages();
 
-    if (!email.trim()) {
-      setError("Please enter your email address.");
+    const cleanEmail = email.trim().toLowerCase();
+    if (!EMAIL_PATTERN.test(cleanEmail)) {
+      setFieldErrors({ email: "Enter a valid email address." });
+      setError("Please fix the highlighted field.");
       return;
     }
 
     setLoading(true);
     try {
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(
-        email.trim(),
-        { redirectTo: `${window.location.origin}/auth` }
+        cleanEmail,
+        { redirectTo: `${window.location.origin}/auth?mode=reset` }
       );
 
       if (resetError) {
@@ -320,7 +412,44 @@ export function AuthView({ initialMode = "signin" }: { initialMode?: AuthMode })
         return;
       }
 
-      setSuccessMsg(`Password reset link sent to ${email.trim()}. Check your inbox.`);
+      setSuccessMsg(`If an account exists for ${cleanEmail}, a password reset link has been sent.`);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Unable to send the password reset email.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    clearMessages();
+
+    const errors: FieldErrors = {};
+    const passwordError = passwordValidationMessage(password);
+    if (passwordError) errors.password = passwordError;
+    if (!confirmPassword) errors.confirmPassword = "Confirm your new password.";
+    else if (password !== confirmPassword) errors.confirmPassword = "Passwords do not match.";
+    if (Object.keys(errors).length) {
+      setFieldErrors(errors);
+      setError("Please fix the highlighted fields.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { error: updateError } = await supabase.auth.updateUser({ password });
+      if (updateError) {
+        setError(updateError.message);
+        return;
+      }
+
+      await supabase.auth.signOut();
+      setPassword("");
+      setConfirmPassword("");
+      setMode("signin");
+      setSuccessMsg("Password updated. You can now sign in with your new password.");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Unable to update your password.");
     } finally {
       setLoading(false);
     }
@@ -360,12 +489,6 @@ export function AuthView({ initialMode = "signin" }: { initialMode?: AuthMode })
           </Link>
 
           {/* Feedback messages */}
-          {error && (
-            <div className="auth-alert-kulot error" role="alert" style={{ marginBottom: "0.5rem" }}>
-              <i className="fa-solid fa-circle-exclamation" />
-              <span>{error}</span>
-            </div>
-          )}
           {successMsg && (
             <div className="auth-alert-kulot success" role="status" style={{ marginBottom: "0.5rem" }}>
               <i className="fa-solid fa-circle-check" />
@@ -394,11 +517,14 @@ export function AuthView({ initialMode = "signin" }: { initialMode?: AuthMode })
                     className="auth-input-kulot"
                     placeholder="you@example.com"
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={(e) => { setEmail(e.target.value); clearFieldError("email"); }}
                     required
                     autoComplete="email"
+                    aria-invalid={Boolean(fieldErrors.email)}
+                    aria-describedby={fieldErrors.email ? "signin-email-error" : undefined}
                   />
                 </div>
+                {fieldErrors.email && <p id="signin-email-error" className="auth-field-error"><i className="fa-solid fa-circle-exclamation" />{fieldErrors.email}</p>}
               </div>
 
               <div className="auth-field-kulot">
@@ -412,9 +538,11 @@ export function AuthView({ initialMode = "signin" }: { initialMode?: AuthMode })
                     className="auth-input-kulot has-icon-right"
                     placeholder="••••••••••••"
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    onChange={(e) => { setPassword(e.target.value); clearFieldError("password"); }}
                     required
                     autoComplete="current-password"
+                    aria-invalid={Boolean(fieldErrors.password)}
+                    aria-describedby={fieldErrors.password ? "signin-password-error" : undefined}
                   />
                   <button
                     type="button"
@@ -425,6 +553,7 @@ export function AuthView({ initialMode = "signin" }: { initialMode?: AuthMode })
                     <i className={showPw ? "fa-regular fa-eye-slash" : "fa-regular fa-eye"} />
                   </button>
                 </div>
+                {fieldErrors.password && <p id="signin-password-error" className="auth-field-error"><i className="fa-solid fa-circle-exclamation" />{fieldErrors.password}</p>}
               </div>
 
               <div className="auth-actions-row">
@@ -447,6 +576,8 @@ export function AuthView({ initialMode = "signin" }: { initialMode?: AuthMode })
                   Forgot password?
                 </button>
               </div>
+
+              {error && <div className="auth-alert-kulot error" role="alert"><i className="fa-solid fa-circle-exclamation" /><span>{error}</span></div>}
 
               <button
                 type="submit"
@@ -511,11 +642,14 @@ export function AuthView({ initialMode = "signin" }: { initialMode?: AuthMode })
                     className="auth-input-kulot"
                     placeholder="you@example.com"
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={(e) => { setEmail(e.target.value); clearFieldError("email"); }}
                     required
                     autoComplete="email"
+                    aria-invalid={Boolean(fieldErrors.email)}
+                    aria-describedby={fieldErrors.email ? "signup-email-error" : undefined}
                   />
                 </div>
+                {fieldErrors.email && <p id="signup-email-error" className="auth-field-error"><i className="fa-solid fa-circle-exclamation" />{fieldErrors.email}</p>}
               </div>
 
               <div className="auth-field-kulot">
@@ -529,9 +663,12 @@ export function AuthView({ initialMode = "signin" }: { initialMode?: AuthMode })
                     className="auth-input-kulot has-icon-right"
                     placeholder="••••••••••••"
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    onChange={(e) => { setPassword(e.target.value); clearFieldError("password"); clearFieldError("confirmPassword"); }}
                     required
                     autoComplete="new-password"
+                    minLength={10}
+                    aria-invalid={Boolean(fieldErrors.password)}
+                    aria-describedby={fieldErrors.password ? "signup-password-error" : undefined}
                   />
                   <button
                     type="button"
@@ -542,6 +679,7 @@ export function AuthView({ initialMode = "signin" }: { initialMode?: AuthMode })
                     <i className={showPw ? "fa-regular fa-eye-slash" : "fa-regular fa-eye"} />
                   </button>
                 </div>
+                {fieldErrors.password && <p id="signup-password-error" className="auth-field-error"><i className="fa-solid fa-circle-exclamation" />{fieldErrors.password}</p>}
               </div>
 
               <div className="auth-field-kulot">
@@ -555,9 +693,12 @@ export function AuthView({ initialMode = "signin" }: { initialMode?: AuthMode })
                     className="auth-input-kulot has-icon-right"
                     placeholder="Re-enter your password"
                     value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    onChange={(e) => { setConfirmPassword(e.target.value); clearFieldError("confirmPassword"); }}
                     required
                     autoComplete="new-password"
+                    minLength={10}
+                    aria-invalid={Boolean(fieldErrors.confirmPassword)}
+                    aria-describedby={fieldErrors.confirmPassword ? "signup-confirm-error" : undefined}
                   />
                   <button
                     type="button"
@@ -568,6 +709,7 @@ export function AuthView({ initialMode = "signin" }: { initialMode?: AuthMode })
                     <i className={showConfirm ? "fa-regular fa-eye-slash" : "fa-regular fa-eye"} />
                   </button>
                 </div>
+                {fieldErrors.confirmPassword && <p id="signup-confirm-error" className="auth-field-error"><i className="fa-solid fa-circle-exclamation" />{fieldErrors.confirmPassword}</p>}
               </div>
 
               <div style={{ display: "flex", flexDirection: "column", gap: "0.45rem", marginTop: "0.1rem" }}>
@@ -576,7 +718,7 @@ export function AuthView({ initialMode = "signin" }: { initialMode?: AuthMode })
                     type="checkbox"
                     id="agree-terms"
                     checked={agreedTerms}
-                    onChange={(e) => setAgreedTerms(e.target.checked)}
+                    onChange={(e) => { setAgreedTerms(e.target.checked); clearFieldError("agreements"); }}
                   />
                   <span>
                     I agree with The Klinique{" "}
@@ -597,7 +739,7 @@ export function AuthView({ initialMode = "signin" }: { initialMode?: AuthMode })
                     type="checkbox"
                     id="agree-cancellation"
                     checked={agreedPolicy}
-                    onChange={(e) => setAgreedPolicy(e.target.checked)}
+                    onChange={(e) => { setAgreedPolicy(e.target.checked); clearFieldError("agreements"); }}
                   />
                   <span>
                     I agree with{" "}
@@ -613,6 +755,9 @@ export function AuthView({ initialMode = "signin" }: { initialMode?: AuthMode })
                   </span>
                 </label>
               </div>
+              {fieldErrors.agreements && <p className="auth-field-error"><i className="fa-solid fa-circle-exclamation" />{fieldErrors.agreements}</p>}
+
+              {error && <div className="auth-alert-kulot error" role="alert"><i className="fa-solid fa-circle-exclamation" /><span>{error}</span></div>}
 
               <button
                 type="submit"
@@ -663,12 +808,17 @@ export function AuthView({ initialMode = "signin" }: { initialMode?: AuthMode })
                     className="auth-input-kulot"
                     placeholder="you@example.com"
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={(e) => { setEmail(e.target.value); clearFieldError("email"); }}
                     required
                     autoComplete="email"
+                    aria-invalid={Boolean(fieldErrors.email)}
+                    aria-describedby={fieldErrors.email ? "forgot-email-error" : undefined}
                   />
                 </div>
+                {fieldErrors.email && <p id="forgot-email-error" className="auth-field-error"><i className="fa-solid fa-circle-exclamation" />{fieldErrors.email}</p>}
               </div>
+
+              {error && <div className="auth-alert-kulot error" role="alert"><i className="fa-solid fa-circle-exclamation" /><span>{error}</span></div>}
 
               <button
                 type="submit"
@@ -702,6 +852,81 @@ export function AuthView({ initialMode = "signin" }: { initialMode?: AuthMode })
                   <a href="mailto:support@theklinique.ph">Contact Support</a>
                 </div>
               </div>
+            </form>
+          )}
+
+          {mode === "reset" && (
+            <form className="auth-form-kulot" id="reset-password-form" onSubmit={handleResetPassword}>
+              <div>
+                <h1 className="auth-title-bold">Choose a New Password</h1>
+                <p className="auth-subtitle-soft">Use at least 10 characters with uppercase, lowercase, a number, and a special character.</p>
+              </div>
+
+              <div className="auth-field-kulot">
+                <label className="auth-label-kulot" htmlFor="reset-password">New Password</label>
+                <div className="auth-input-kulot-wrap">
+                  <input
+                    id="reset-password"
+                    type={showPw ? "text" : "password"}
+                    className="auth-input-kulot has-icon-right"
+                    value={password}
+                    onChange={(e) => { setPassword(e.target.value); clearFieldError("password"); clearFieldError("confirmPassword"); }}
+                    required
+                    minLength={10}
+                    autoComplete="new-password"
+                    aria-invalid={Boolean(fieldErrors.password)}
+                    aria-describedby={fieldErrors.password ? "reset-password-error" : undefined}
+                  />
+                  <button
+                    type="button"
+                    className="auth-eye-btn"
+                    onClick={() => setShowPw(!showPw)}
+                    aria-label={showPw ? "Hide password" : "Show password"}
+                  >
+                    <i className={showPw ? "fa-regular fa-eye-slash" : "fa-regular fa-eye"} />
+                  </button>
+                </div>
+                {fieldErrors.password && <p id="reset-password-error" className="auth-field-error"><i className="fa-solid fa-circle-exclamation" />{fieldErrors.password}</p>}
+              </div>
+
+              <div className="auth-field-kulot">
+                <label className="auth-label-kulot" htmlFor="reset-confirm-password">Confirm New Password</label>
+                <div className="auth-input-kulot-wrap">
+                  <input
+                    id="reset-confirm-password"
+                    type={showConfirm ? "text" : "password"}
+                    className="auth-input-kulot has-icon-right"
+                    value={confirmPassword}
+                    onChange={(e) => { setConfirmPassword(e.target.value); clearFieldError("confirmPassword"); }}
+                    required
+                    minLength={10}
+                    autoComplete="new-password"
+                    aria-invalid={Boolean(fieldErrors.confirmPassword)}
+                    aria-describedby={fieldErrors.confirmPassword ? "reset-confirm-error" : undefined}
+                  />
+                  <button
+                    type="button"
+                    className="auth-eye-btn"
+                    onClick={() => setShowConfirm(!showConfirm)}
+                    aria-label={showConfirm ? "Hide password" : "Show password"}
+                  >
+                    <i className={showConfirm ? "fa-regular fa-eye-slash" : "fa-regular fa-eye"} />
+                  </button>
+                </div>
+                {fieldErrors.confirmPassword && <p id="reset-confirm-error" className="auth-field-error"><i className="fa-solid fa-circle-exclamation" />{fieldErrors.confirmPassword}</p>}
+              </div>
+
+              {error && <div className="auth-alert-kulot error" role="alert"><i className="fa-solid fa-circle-exclamation" /><span>{error}</span></div>}
+
+              <button
+                type="submit"
+                className="auth-btn-solid-darkpink"
+                id="reset-password-btn"
+                disabled={loading}
+              >
+                {loading ? <i className="fa-solid fa-spinner fa-spin" /> : <i className="fa-solid fa-lock" />}
+                <span>{loading ? "Updating…" : "UPDATE PASSWORD"}</span>
+              </button>
             </form>
           )}
         </div>

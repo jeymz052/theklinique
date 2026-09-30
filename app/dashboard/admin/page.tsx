@@ -7,14 +7,17 @@ import { supabase } from "@/lib/supabase";
 import { useRoleAuth } from "@/lib/rbac";
 import { fetchAppointments, updateAppointmentStatus, type Appointment, type AppointmentStatus } from "@/lib/appointments";
 import DashboardAccountMenu from "@/app/components/DashboardAccountMenu";
+import StaffSettingsWorkspace from "@/app/components/StaffSettingsWorkspace";
+import DashboardInsights from "@/app/components/DashboardInsights";
+import { RESERVATION_FEE_LABEL } from "@/lib/reservation";
 
 type Booking = Appointment;
 
-type AdminTab = "overview" | "bookings" | "patients" | "revenue" | "settings";
+type AdminTab = "overview" | "bookings" | "patients" | "revenue" | "profile" | "settings";
 
 export default function AdminDashboard() {
   const router = useRouter();
-  const { user, loading: authLoading } = useRoleAuth(["superadmin"]);
+  const { user, role, loading: authLoading } = useRoleAuth(["superadmin", "doctor"]);
   const [activeTab, setActiveTab] = useState<AdminTab>("overview");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -28,6 +31,18 @@ export default function AdminDashboard() {
       fetchAppointments().then(setBookings).catch((error) => setDataError(error.message));
     }
   }, [authLoading]);
+
+  useEffect(() => {
+    if (!authLoading && (role === "doctor" || role === "superadmin")) router.replace("/dashboard/doctor");
+  }, [authLoading, role, router]);
+
+  useEffect(() => {
+    const requestedView = new URLSearchParams(window.location.search).get("view");
+    if (requestedView === "profile" || requestedView === "settings") {
+      window.history.replaceState({}, "", "/dashboard/admin");
+      queueMicrotask(() => setActiveTab(requestedView));
+    }
+  }, []);
 
   const handleSignOut = async () => {
     setSigningOut(true);
@@ -122,8 +137,8 @@ export default function AdminDashboard() {
         <div className="dk-user-badge">
           <div className="dk-user-avatar black">SA</div>
           <div>
-            <p className="dk-user-name">Super Administrator</p>
-            <p className="dk-user-role">Practice Director · Full Access</p>
+            <p className="dk-user-name">{role === "doctor" ? "Doctor" : "Super Administrator"}</p>
+            <p className="dk-user-role">Clinical leadership · Full Access</p>
           </div>
         </div>
 
@@ -138,9 +153,10 @@ export default function AdminDashboard() {
 
           {navItems.map((item) => (
             <button
+              type="button"
               key={item.key}
               id={`admin-nav-${item.key}`}
-              className={`dk-nav-item ${activeTab === item.key ? "active" : ""}`}
+              className={`dk-nav-item ${activeTab === item.key || (item.key === "settings" && activeTab === "profile") ? "active" : ""}`}
               style={{ paddingLeft: "1.2rem", justifyContent: "space-between" }}
               onClick={() => setActiveTab(item.key)}
             >
@@ -195,7 +211,7 @@ export default function AdminDashboard() {
             <Link href="/booking" className="dk-btn dk-btn-pink">
               <i className="fa-solid fa-plus" /> Add Appointment
             </Link>
-            <DashboardAccountMenu name="Super Administrator" role="Practice Director" email={user?.email} onSignOut={handleSignOut} signingOut={signingOut} />
+            <DashboardAccountMenu name={role === "doctor" ? "Doctor" : "Super Administrator"} role="Clinical leadership · Full access" email={user?.email} onSignOut={handleSignOut} signingOut={signingOut} profileHref="/dashboard/admin?view=profile" settingsHref="/dashboard/admin?view=settings" />
           </div>
         </header>
 
@@ -206,28 +222,28 @@ export default function AdminDashboard() {
             <div className="dk-kpi-card">
               <div className="dk-kpi-top">
                 <div className="dk-kpi-icon dk-kpi-icon-pink"><i className="fa-solid fa-peso-sign" /></div>
-                <span className="dk-kpi-trend up"><i className="fa-solid fa-arrow-trend-up" /> +14.2%</span>
+                <span className="dk-kpi-trend label">Recorded services</span>
               </div>
-              <p className="dk-kpi-value">?{totalRevenue.toLocaleString()}</p>
-              <p className="dk-kpi-label">Month-to-Date Volume</p>
+              <p className="dk-kpi-value">₱{totalRevenue.toLocaleString()}</p>
+              <p className="dk-kpi-label">Service value</p>
             </div>
 
             <div className="dk-kpi-card">
               <div className="dk-kpi-top">
                 <div className="dk-kpi-icon dk-kpi-icon-green"><i className="fa-solid fa-calendar-check" /></div>
-                <span className="dk-kpi-trend label">Active Roster</span>
+                <span className="dk-kpi-trend label">Ready</span>
               </div>
               <p className="dk-kpi-value">{confirmedCount}</p>
-              <p className="dk-kpi-label">Confirmed Appointments</p>
+              <p className="dk-kpi-label">Confirmed visits</p>
             </div>
 
             <div className="dk-kpi-card">
               <div className="dk-kpi-top">
                 <div className="dk-kpi-icon dk-kpi-icon-amber"><i className="fa-solid fa-hourglass-half" /></div>
-                <span className="dk-kpi-trend warn">Deposit Check</span>
+                <span className="dk-kpi-trend warn">Needs review</span>
               </div>
               <p className="dk-kpi-value">{pendingCount}</p>
-              <p className="dk-kpi-label">Pending Verification</p>
+              <p className="dk-kpi-label">Pending bookings</p>
             </div>
 
             <div className="dk-kpi-card">
@@ -239,6 +255,8 @@ export default function AdminDashboard() {
               <p className="dk-kpi-label">Attending Physician</p>
             </div>
           </div>
+
+          {activeTab === "overview" && <DashboardInsights appointments={bookings} role="admin" />}
 
           {/* Overview Tab */}
           {activeTab === "overview" && (
@@ -479,7 +497,7 @@ export default function AdminDashboard() {
                   <div className="dk-info-block">
                     <p className="dk-info-block-title">Deposit Verification Policy</p>
                     <p style={{ fontSize: "0.82rem", color: "#7a5060", lineHeight: "1.7" }}>
-                      A standard reservation deposit of ?1,000 is required per appointment slot. Deposits are deducted from the final treatment cost at the clinic checkout counter.
+                      A standard reservation deposit of {RESERVATION_FEE_LABEL} is required per appointment slot. Deposits are deducted from the final treatment cost at the clinic checkout counter.
                     </p>
                     <div style={{ marginTop: "1.2rem" }}>
                       <Link href="/cancellation-policy" target="_blank" className="dk-btn dk-btn-outline">
@@ -492,8 +510,10 @@ export default function AdminDashboard() {
             </div>
           )}
 
-          {/* Settings Tab */}
-          {activeTab === "settings" && (
+          {(activeTab === "settings" || activeTab === "profile") && <StaffSettingsWorkspace key={activeTab} email={user?.email || ""} initialTab={activeTab === "profile" ? "profile" : "general"} />}
+
+          {/* Legacy settings summary retained outside the active workspace. */}
+          {false && (
             <div className="dk-panel">
               <div className="dk-panel-hdr">
                 <div className="dk-panel-title-wrap">

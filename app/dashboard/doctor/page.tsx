@@ -6,11 +6,20 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useRoleAuth } from "@/lib/rbac";
 import DashboardAccountMenu from "@/app/components/DashboardAccountMenu";
+import StaffSettingsWorkspace from "@/app/components/StaffSettingsWorkspace";
 import AppointmentNotifications from "@/app/components/AppointmentNotifications";
-import { fetchAppointments, updateAppointmentStatus, type Appointment, type AppointmentStatus } from "@/lib/appointments";
+import DashboardInsights from "@/app/components/DashboardInsights";
+import DoctorAppointmentWorkspace from "@/app/components/DoctorAppointmentWorkspace";
+import LiveClinicStatus from "@/app/components/LiveClinicStatus";
+import PatientRecordsWorkspace from "@/app/components/PatientRecordsWorkspace";
+import ConsultationWorkspace from "@/app/components/ConsultationWorkspace";
+import TreatmentWorkspace from "@/app/components/TreatmentWorkspace";
+import DoctorScheduleManager from "@/app/components/DoctorScheduleManager";
+import { appointmentStatusLabel, fetchAppointments, updateAppointmentStatus, type Appointment, type AppointmentStatus } from "@/lib/appointments";
+import { fetchRescheduleRequests, reviewRescheduleRequest, type RescheduleRequest } from "@/lib/rescheduleRequests";
 
-type NavSection = "workflow" | "patients";
-type DoctorView = "dashboard" | "schedule" | "all-appts" | "emr" | "rooms";
+type NavSection = "scheduling" | "clinical";
+type DoctorView = "dashboard" | "availability" | "blocked-dates" | "all-appts" | "emr" | "consultations" | "treatments" | "rooms" | "profile" | "settings";
 
 interface Booking extends Appointment {
   room: string;
@@ -18,11 +27,12 @@ interface Booking extends Appointment {
 
 export default function DoctorDashboard() {
   const router = useRouter();
-  const { user, loading: authLoading } = useRoleAuth(["doctor", "superadmin"]);
+  const { user, role, loading: authLoading } = useRoleAuth(["doctor", "superadmin"]);
   const [view, setView] = useState<DoctorView>("dashboard");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const [openSections, setOpenSections] = useState<NavSection[]>(["workflow", "patients"]);
+  const [openSections, setOpenSections] = useState<NavSection[]>(["scheduling", "clinical"]);
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [rescheduleRequests, setRescheduleRequests] = useState<RescheduleRequest[]>([]);
   const [signingOut, setSigningOut] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
 
@@ -34,6 +44,7 @@ export default function DoctorDashboard() {
   const [newNotes, setNewNotes]       = useState("");
   const [dataError, setDataError] = useState("");
   const [savingConsultation, setSavingConsultation] = useState(false);
+  const [clinicalAppointmentId, setClinicalAppointmentId] = useState<string | null>(null);
 
   const today    = new Date();
   const dayName  = today.toLocaleDateString("en-PH", { weekday: "long" });
@@ -41,17 +52,28 @@ export default function DoctorDashboard() {
   const todayStr = today.toLocaleDateString("en-PH", { month: "long", day: "numeric", year: "numeric" });
   const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
   const [newAppointmentDate, setNewAppointmentDate] = useState(todayKey);
-  const clinicOpenToday = today.getDay() >= 1 && today.getDay() <= 6;
 
   const todayBookings = bookings.filter((b) => b.date === todayKey);
 
   useEffect(() => {
     if (!authLoading) {
-      fetchAppointments()
-        .then((appointments) => setBookings(appointments.map((appointment) => ({ ...appointment, room: "Clinic" }))))
-        .catch((error) => setDataError(error.message));
+      const refresh = () => Promise.all([fetchAppointments(), fetchRescheduleRequests()])
+          .then(([appointments, requests]) => { setBookings(appointments.map((appointment) => ({ ...appointment, room: "Clinic" }))); setRescheduleRequests(requests); })
+          .catch((error) => setDataError(error.message));
+      void refresh();
+      const interval = window.setInterval(refresh, 10_000);
+      return () => window.clearInterval(interval);
     }
   }, [authLoading]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const requestedView = params.get("view");
+    if (requestedView === "all-appts" || requestedView === "availability" || requestedView === "blocked-dates" || requestedView === "profile" || requestedView === "settings") {
+      window.history.replaceState({}, "", "/dashboard/doctor");
+      queueMicrotask(() => setView(requestedView));
+    }
+  }, []);
 
   const toggleSection = (s: NavSection) =>
     setOpenSections((prev) =>
@@ -73,6 +95,18 @@ export default function DoctorDashboard() {
     }
   };
 
+  const handleReviewReschedule = async (requestId: string, decision: "approved" | "rejected") => {
+    try {
+      await reviewRescheduleRequest(requestId, decision);
+      const [appointments, requests] = await Promise.all([fetchAppointments(), fetchRescheduleRequests()]);
+      setBookings(appointments.map((appointment) => ({ ...appointment, room: "Clinic" })));
+      setRescheduleRequests(requests);
+    } catch (error) {
+      setDataError(error instanceof Error ? error.message : "Unable to review reschedule request.");
+      throw error;
+    }
+  };
+
   const handleAddConsultation = async (e: React.FormEvent) => {
     e.preventDefault();
     const [firstName, ...lastNameParts] = newPatient.trim().split(/\s+/);
@@ -83,15 +117,18 @@ export default function DoctorDashboard() {
     setSavingConsultation(true);
     setDataError("");
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("Your session expired. Please sign in again.");
       const response = await fetch("/api/appointments", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
         body: JSON.stringify({
           firstName,
           lastName: lastNameParts.join(" "),
           email: newEmail,
           phone: newPhone,
           serviceSlug: newService,
+          consentAcknowledged: true,
           appointmentDate: newAppointmentDate,
           appointmentTime: `${newTime}:00`,
           notes: newNotes,
@@ -110,18 +147,23 @@ export default function DoctorDashboard() {
     }
   };
 
-  const filteredAll = bookings;
+  const appointmentActions = (booking: Booking) => (
+    <div className="dk-action-group">
+      {booking.status === "pending" && <button type="button" className="dk-act-btn dk-act-complete" onClick={() => handleStatusChange(booking.id, "confirmed")}><i className="fa-solid fa-check" /> Confirm</button>}
+      {booking.status === "confirmed" && <button type="button" className="dk-act-btn dk-act-complete" onClick={() => handleStatusChange(booking.id, "completed")}><i className="fa-solid fa-check-double" /> Complete</button>}
+      {booking.status === "confirmed" && <button type="button" className="dk-act-btn" onClick={() => handleStatusChange(booking.id, "no_show")}><i className="fa-solid fa-user-slash" /> No show</button>}
+      {(booking.status === "pending" || booking.status === "confirmed") && <button type="button" className="dk-act-btn" onClick={() => handleStatusChange(booking.id, "cancelled")}><i className="fa-solid fa-xmark" /> Cancel</button>}
+    </div>
+  );
 
   const doctorName =
-    (user?.user_metadata?.full_name as string) || "Dr. Kharyl Dence";
+    (user?.user_metadata?.full_name as string) || (role === "superadmin" ? "Super Administrator" : "Dr. Kharyl Dence");
 
   const stats = [
     { icon: "fa-calendar-day",   label: "Today's Procedures", value: todayBookings.length.toString(),                                    sub: "Scheduled today"       },
     { icon: "fa-hourglass-half", label: "Pending Intake",     value: bookings.filter((b) => b.status === "pending").length.toString(),   sub: "Awaiting confirmation" },
     { icon: "fa-circle-check",   label: "Completed",          value: bookings.filter((b) => b.status === "completed").length.toString(), sub: "This week"             },
-    { icon: "fa-door-open",      label: "Suites Open",        value: "4 / 4",                                                           sub: "Sanitized & ready"     },
     { icon: "fa-users",          label: "Total Patients",     value: bookings.length.toString(),                                         sub: "All time records"      },
-    { icon: "fa-clipboard-list", label: "All Appointments",   value: bookings.length.toString(),                                         sub: "Across all dates"      },
   ];
 
   const rooms = [
@@ -148,7 +190,7 @@ export default function DoctorDashboard() {
           <div className="dk-modal-card">
             <div className="dk-modal-head">
               <p className="dk-modal-title">
-                <i className="fa-solid fa-calendar-plus" /> New Consultation
+                <i className="fa-solid fa-calendar-plus" /> New Appointment
               </p>
               <button type="button" className="dk-modal-close" onClick={() => setShowAddModal(false)}>
                 <i className="fa-solid fa-xmark" />
@@ -204,7 +246,7 @@ export default function DoctorDashboard() {
                 <div className="dk-modal-foot">
                   <button type="button" className="dk-btn dk-btn-outline" onClick={() => setShowAddModal(false)}>Cancel</button>
                   <button type="submit" className="dk-btn dk-btn-pink" disabled={savingConsultation}>
-                    <i className="fa-solid fa-calendar-plus" /> {savingConsultation ? "Saving..." : "Add Consultation"}
+                    <i className="fa-solid fa-calendar-plus" /> {savingConsultation ? "Saving..." : "Add Appointment"}
                   </button>
                 </div>
               </div>
@@ -228,29 +270,36 @@ export default function DoctorDashboard() {
           </div>
           <div>
             <p className="dk-user-name">{doctorName}</p>
-            <p className="dk-user-role">Attending Physician</p>
+            <p className="dk-user-role">{role === "superadmin" ? "Super Administrator" : "Attending Physician"}</p>
           </div>
         </div>
 
         <nav className="dk-nav">
-          {/* Clinical Workflow */}
           <div className="dk-nav-section">
-            <button className="dk-nav-section-hdr" onClick={() => toggleSection("workflow")}>
-              <span className="dk-nav-section-label">
-                <i className="fa-solid fa-stethoscope" />
-                Clinical Workflow
-              </span>
-              <i className={`fa-solid fa-chevron-${openSections.includes("workflow") ? "up" : "down"} dk-nav-chevron`} />
+            <button type="button" id="nav-dashboard" className={`dk-nav-item ${view === "dashboard" ? "active" : ""}`} onClick={() => setView("dashboard")}>
+              <i className="fa-solid fa-table-columns" />
+              Overview
             </button>
-            {openSections.includes("workflow") && (
+          </div>
+
+          {/* Scheduling */}
+          <div className="dk-nav-section">
+            <button type="button" className="dk-nav-section-hdr" onClick={() => toggleSection("scheduling")}>
+              <span className="dk-nav-section-label">
+                <i className="fa-solid fa-calendar-days" />
+                Scheduling
+              </span>
+              <i className={`fa-solid fa-chevron-${openSections.includes("scheduling") ? "up" : "down"} dk-nav-chevron`} />
+            </button>
+            {openSections.includes("scheduling") && (
               <div className="dk-nav-items">
                 {[
-                  { key: "dashboard",  icon: "fa-table-columns",    label: "Dashboard"           },
-                  { key: "schedule",   icon: "fa-calendar-day",     label: "Today's Schedule"    },
-                  { key: "all-appts",  icon: "fa-calendar-check",   label: "All Appointments"    },
-                  { key: "rooms",      icon: "fa-door-open",        label: "Treatment Suites"    },
+                  { key: "all-appts",  icon: "fa-list-check",       label: "All Appointments"    },
+                  { key: "availability", icon: "fa-calendar-days", label: "Doctor Schedule"     },
+                  { key: "blocked-dates", icon: "fa-calendar-xmark", label: "Blocked Dates"     },
                 ].map((item) => (
                   <button
+                    type="button"
                     key={item.key}
                     id={`nav-${item.key}`}
                     className={`dk-nav-item ${view === item.key ? "active" : ""}`}
@@ -264,55 +313,41 @@ export default function DoctorDashboard() {
             )}
           </div>
 
-          {/* Patient Records */}
+          {/* Clinical care */}
           <div className="dk-nav-section">
-            <button className="dk-nav-section-hdr" onClick={() => toggleSection("patients")}>
+            <button type="button" className="dk-nav-section-hdr" onClick={() => toggleSection("clinical")}>
               <span className="dk-nav-section-label">
-                <i className="fa-solid fa-users" />
-                Patient Records
+                <i className="fa-solid fa-stethoscope" />
+                Clinical Care
               </span>
-              <i className={`fa-solid fa-chevron-${openSections.includes("patients") ? "up" : "down"} dk-nav-chevron`} />
+              <i className={`fa-solid fa-chevron-${openSections.includes("clinical") ? "up" : "down"} dk-nav-chevron`} />
             </button>
-            {openSections.includes("patients") && (
+            {openSections.includes("clinical") && (
               <div className="dk-nav-items">
-                <button
-                  id="nav-emr"
-                  className={`dk-nav-item ${view === "emr" ? "active" : ""}`}
-                  onClick={() => setView("emr")}
-                >
-                  <i className="fa-solid fa-notes-medical" />
-                  Medical Records (EMR)
-                </button>
+                <button type="button" id="nav-consultations" className={`dk-nav-item ${view === "consultations" ? "active" : ""}`} onClick={() => setView("consultations")}><i className="fa-solid fa-comment-medical" /> Consultations</button>
+                <button type="button" id="nav-treatments" className={`dk-nav-item ${view === "treatments" ? "active" : ""}`} onClick={() => setView("treatments")}><i className="fa-solid fa-syringe" /> Treatment Workspace</button>
+                <button type="button" id="nav-rooms" className={`dk-nav-item ${view === "rooms" ? "active" : ""}`} onClick={() => setView("rooms")}><i className="fa-solid fa-door-open" /> Treatment Suites</button>
               </div>
             )}
           </div>
 
-          {/* Add consult shortcut */}
           <div className="dk-nav-section">
-            <button className="dk-nav-section-hdr dk-nav-section-hdr--solo" style={{ cursor: "pointer" }} onClick={() => setShowAddModal(true)}>
-              <span className="dk-nav-section-label" style={{ color: "var(--dk-pink-600)", fontWeight: 700 }}>
-                <i className="fa-solid fa-calendar-plus" />
-                Add Consultation
-              </span>
+            <button type="button" id="nav-emr" className={`dk-nav-item ${view === "emr" ? "active" : ""}`} onClick={() => setView("emr")}>
+              <i className="fa-solid fa-notes-medical" />
+              Patient Records
             </button>
           </div>
+
+          <div className="dk-nav-section">
+            <button type="button" id="nav-settings" className={`dk-nav-item ${view === "settings" || view === "profile" ? "active" : ""}`} onClick={() => setView("settings")}>
+              <i className="fa-solid fa-sliders" />
+              Clinic Settings
+            </button>
+          </div>
+
         </nav>
 
-        <div className="dk-availability">
-          <p className="dk-availability-title">
-            <i className="fa-solid fa-circle dk-availability-dot" />
-            Available Today
-          </p>
-          <div className="dk-avail-item">
-            <div className="dk-avail-icon"><i className="fa-solid fa-house-chimney-medical" /></div>
-            <div>
-              <p className="dk-avail-name">In-Person Clinic</p>
-              <p className="dk-avail-hours">9:00 AM – 5:00 PM</p>
-              <p className={clinicOpenToday ? "dk-avail-open" : "dk-avail-closed"}><i className="fa-solid fa-circle" style={{ fontSize: "0.45rem" }} /> {clinicOpenToday ? "Appointments available" : "Reopens Monday"}</p>
-            </div>
-          </div>
-          <p className="dk-avail-day">{dayName}, {dateStr}</p>
-        </div>
+        <LiveClinicStatus onAction={() => setView("all-appts")} actionLabel="Open appointments" />
 
         <div className="dk-sidebar-foot">
           <p className="dk-email-label">Logged in as</p>
@@ -332,27 +367,37 @@ export default function DoctorDashboard() {
           </button>
           <div>
             <p className="dk-workspace-eyebrow">The Klinique</p>
-            <p className="dk-workspace-title">Doc Kharyl Workspace</p>
+            <p className="dk-workspace-title">{view === "all-appts" ? "Manage Appointments" : view === "emr" ? "Patient Records" : view === "consultations" ? "Consultations" : view === "treatments" ? "Treatment Workspace" : "Doc Kharyl Workspace"}</p>
             <p style={{ fontSize: "0.7rem", color: "#9a7a84", marginTop: "0.1rem" }}>
               <span style={{ display: "inline-block", width: "7px", height: "7px", borderRadius: "50%", background: "#16a34a", marginRight: "0.4rem", verticalAlign: "middle" }} />
               The Klinique · Cagayan de Oro · {dayName}, {dateStr}
             </p>
           </div>
           <div className="dk-topbar-actions">
-            <AppointmentNotifications appointments={bookings} onOpenSchedule={() => setView("schedule")} />
-            <DashboardAccountMenu name={doctorName} role="Attending Physician" email={user?.email} onSignOut={handleSignOut} signingOut={signingOut} />
+            <AppointmentNotifications appointments={bookings} onOpenSchedule={() => setView("all-appts")} />
+            <DashboardAccountMenu name={doctorName} role={role === "superadmin" ? "Super Administrator" : "Attending Physician"} email={user?.email} onSignOut={handleSignOut} signingOut={signingOut} profileHref="/dashboard/doctor?view=profile" settingsHref="/dashboard/doctor?view=settings" />
           </div>
         </header>
 
         <div className="dk-body">
           {dataError && <p className="bk-form-error" role="alert">{dataError}</p>}
           {view === "dashboard" && (
-          <div className="dk-stats-grid" style={{ gridTemplateColumns: "repeat(3, 1fr)", marginBottom: "1.5rem" }}>
+            <div className="dk-welcome-card dk-welcome-card--primary">
+              <div>
+                <p className="dk-welcome-label">Clinical overview</p>
+                <p className="dk-welcome-title">Good day, {doctorName}</p>
+                <p className="dk-welcome-sub">{todayBookings.length ? `${todayBookings.length} patient${todayBookings.length === 1 ? "" : "s"} scheduled today.` : "No patients scheduled today."} Review the queue and prepare treatment notes before each visit.</p>
+              </div>
+              <button type="button" className="dk-cta-btn" onClick={() => setShowAddModal(true)}><i className="fa-solid fa-calendar-plus" /> Add consultation</button>
+            </div>
+          )}
+          {view === "dashboard" && (
+          <div className="dk-stats-grid dk-stats-grid--4col" style={{ marginBottom: "1.5rem" }}>
             {stats.map((s) => (
               <div key={s.label} className="dk-stat-card">
                 <div className="dk-stat-card-top">
                   <p className="dk-stat-label">{s.label.toUpperCase()}</p>
-                  <i className={`fa-solid ${s.icon} dk-stat-icon`} />
+                  <span className="dk-stat-icon"><i className={`fa-solid ${s.icon}`} /></span>
                 </div>
                 <p className="dk-stat-value">{s.value}</p>
                 <p className="dk-stat-sub">{s.sub}</p>
@@ -361,21 +406,19 @@ export default function DoctorDashboard() {
           </div>
           )}
 
+          {view === "dashboard" && <DashboardInsights appointments={bookings} role="doctor" />}
+
+          {view === "dashboard" && <div className="dk-quick-grid" style={{ marginBottom: "1.5rem" }}>
+            {[
+              { icon: "fa-list-check", label: "All Appointments", action: () => setView("all-appts") },
+              { icon: "fa-comment-medical", label: "Consultations", action: () => setView("consultations") },
+              { icon: "fa-syringe", label: "Treatment Workspace", action: () => setView("treatments") },
+              { icon: "fa-notes-medical", label: "Patient Records", action: () => setView("emr") },
+            ].map((item) => <button type="button" className="dk-quick-card" key={item.label} onClick={item.action}><i className={`fa-solid ${item.icon} dk-quick-icon`} /><span className="dk-quick-label">{item.label}</span><i className="fa-solid fa-arrow-right dk-quick-arrow" /></button>)}
+          </div>}
+
           {view === "dashboard" && (
             <>
-              <div className="dk-welcome-card">
-                <div>
-                  <p className="dk-welcome-label">Clinical Dashboard</p>
-                  <p className="dk-welcome-title">Good day, {doctorName}</p>
-                  <p className="dk-welcome-sub">
-                    You have {todayBookings.length} procedures scheduled today. All treatment suites are sanitized and ready.
-                  </p>
-                </div>
-                  <button type="button" className="dk-cta-btn" onClick={() => setShowAddModal(true)}>
-                  <i className="fa-solid fa-calendar-plus" /> Add Consultation
-                </button>
-              </div>
-
               {bookings.length === 0 ? (
                 <div className="dk-empty">
                   <div className="dk-empty-icon"><i className="fa-regular fa-calendar-xmark" /></div>
@@ -395,8 +438,8 @@ export default function DoctorDashboard() {
                         <p className="dk-panel-sub">{todayStr}</p>
                       </div>
                     </div>
-                    <button type="button" className="dk-btn dk-btn-outline dk-btn-sm" onClick={() => setView("schedule")}>
-                      Full Schedule ?
+                    <button type="button" className="dk-btn dk-btn-outline dk-btn-sm" onClick={() => setView("all-appts")}>
+                      All appointments <i className="fa-solid fa-arrow-right" />
                     </button>
                   </div>
                   <div className="dk-table-wrap">
@@ -431,17 +474,11 @@ export default function DoctorDashboard() {
                             <td>
                               <span className={`dk-badge dk-badge-${b.status}`}>
                                 <i className={`fa-solid ${b.status === "confirmed" ? "fa-circle-check" : b.status === "completed" ? "fa-award" : "fa-hourglass-half"}`} />
-                                <span style={{ textTransform: "capitalize" }}>{b.status}</span>
+                                <span>{appointmentStatusLabel(b)}</span>
                               </span>
                             </td>
                             <td style={{ textAlign: "right" }}>
-                              <div className="dk-action-group">
-                                {b.status === "confirmed" && (
-                                  <button type="button" className="dk-act-btn dk-act-complete" onClick={() => handleStatusChange(b.id, "completed")}>
-                                    <i className="fa-solid fa-check" /> Complete
-                                  </button>
-                                )}
-                              </div>
+                              {appointmentActions(b)}
                             </td>
                           </tr>
                         ))}
@@ -453,120 +490,22 @@ export default function DoctorDashboard() {
             </>
           )}
 
-          {/* Schedule */}
-          {view === "schedule" && (
-            <>
-              <div className="dk-welcome-card">
-                <div>
-                  <p className="dk-welcome-label">Schedule</p>
-                  <p className="dk-welcome-title">Today&apos;s Schedule</p>
-                  <p className="dk-welcome-sub">All consultations booked for {todayStr}.</p>
-                </div>
-                <button type="button" className="dk-cta-btn" onClick={() => setShowAddModal(true)}>
-                  <i className="fa-solid fa-calendar-plus" /> Add
-                </button>
-              </div>
-              {todayBookings.length === 0 ? (
-                <div className="dk-empty">
-                  <div className="dk-empty-icon"><i className="fa-regular fa-calendar-xmark" /></div>
-                  <h3>No consultations today</h3>
-                  <p>Add a consultation to build today&apos;s schedule.</p>
-                  <button type="button" className="dk-cta-btn" style={{ marginTop: "0.5rem" }} onClick={() => setShowAddModal(true)}>
-                    <i className="fa-solid fa-calendar-plus" /> Add Consultation
-                  </button>
-                </div>
-              ) : (
-                <div className="dk-panel">
-                  <div className="dk-table-wrap">
-                    <table className="dk-table">
-                      <thead>
-                        <tr>
-                          <th>Time</th>
-                          <th>Patient</th>
-                          <th>Procedure</th>
-                          <th>Suite</th>
-                          <th>Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {todayBookings.sort((a, b) => a.time.localeCompare(b.time)).map((b) => (
-                          <tr key={b.id}>
-                            <td><strong>{b.time}</strong></td>
-                            <td><p className="dk-cell-primary">{b.patient}</p></td>
-                            <td>{b.service}</td>
-                            <td>{b.room}</td>
-                            <td>
-                              <span className={`dk-badge dk-badge-${b.status}`}>
-                                <span style={{ textTransform: "capitalize" }}>{b.status}</span>
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-            </>
+          {(view === "availability" || view === "blocked-dates") && (
+            <DoctorScheduleManager key={view} doctorName={doctorName} initialTab={view === "blocked-dates" ? "blocks" : "schedule"} />
           )}
 
           {/* All Appointments */}
           {view === "all-appts" && (
             <>
-              <div className="dk-welcome-card">
+              <div className="dk-welcome-card ma-hero">
                 <div>
-                  <p className="dk-welcome-label">Appointments</p>
-                  <p className="dk-welcome-title">All Appointments</p>
-                  <p className="dk-welcome-sub">Complete appointment history across all dates.</p>
+                  <p className="dk-welcome-label">Appointments / Management</p>
+                  <p className="dk-welcome-title">All bookings, one timeline</p>
+                  <p className="dk-welcome-sub">Search, filter, review requests, and manage every The Klinique appointment by date.</p>
                 </div>
-                <button type="button" className="dk-cta-btn" onClick={() => setShowAddModal(true)}>
-                  <i className="fa-solid fa-calendar-plus" /> Add
-                </button>
+                <div className="ma-hero-actions"><button type="button" className="dk-cta-btn" onClick={() => setShowAddModal(true)}><i className="fa-solid fa-plus" /> New Appointment</button></div>
               </div>
-              {filteredAll.length === 0 ? (
-                <div className="dk-empty">
-                  <div className="dk-empty-icon"><i className="fa-regular fa-calendar-xmark" /></div>
-                  <h3>No appointments yet</h3>
-                  <p>Add your first consultation to start tracking appointments.</p>
-                  <button type="button" className="dk-cta-btn" style={{ marginTop: "0.5rem" }} onClick={() => setShowAddModal(true)}>
-                    <i className="fa-solid fa-calendar-plus" /> Add Consultation
-                  </button>
-                </div>
-              ) : (
-                <div className="dk-panel">
-                  <div className="dk-table-wrap">
-                    <table className="dk-table">
-                      <thead>
-                        <tr>
-                          <th>Ref ID</th>
-                          <th>Patient</th>
-                          <th>Procedure</th>
-                          <th>Date & Time</th>
-                          <th>Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredAll.map((b) => (
-                          <tr key={b.id}>
-                            <td><span className="dk-cell-id">{b.referenceNo}</span></td>
-                            <td><p className="dk-cell-primary">{b.patient}</p></td>
-                            <td>{b.service}</td>
-                            <td>
-                              <p className="dk-cell-primary">{b.time}</p>
-                              <p className="dk-cell-secondary">{b.date}</p>
-                            </td>
-                            <td>
-                              <span className={`dk-badge dk-badge-${b.status}`}>
-                                <span style={{ textTransform: "capitalize" }}>{b.status}</span>
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
+              <DoctorAppointmentWorkspace appointments={bookings} onStatusChange={handleStatusChange} rescheduleRequests={rescheduleRequests} onReviewReschedule={handleReviewReschedule} onOpenClinicalWorkspace={(appointment) => { setClinicalAppointmentId(appointment.id); setView(appointment.serviceCategory === "consultations" ? "consultations" : "treatments"); }} />
             </>
           )}
 
@@ -600,21 +539,11 @@ export default function DoctorDashboard() {
 
           {/* EMR */}
           {view === "emr" && (
-            <>
-              <div className="dk-welcome-card">
-                <div>
-                  <p className="dk-welcome-label">Medical Records</p>
-                  <p className="dk-welcome-title">Patient EMR</p>
-                  <p className="dk-welcome-sub">Electronic medical records and consultation notes for your patients.</p>
-                </div>
-              </div>
-              <div className="dk-empty">
-                <div className="dk-empty-icon"><i className="fa-regular fa-folder-open" /></div>
-                <h3>No records yet</h3>
-                <p>Patient medical records will appear here once consultations are completed.</p>
-              </div>
-            </>
+            <PatientRecordsWorkspace onBookPatient={(patient) => { setNewPatient(patient.fullName); setNewEmail(patient.email); setNewPhone(patient.phone); setShowAddModal(true); }} />
           )}
+          {view === "consultations" && <ConsultationWorkspace appointments={bookings} initialAppointmentId={clinicalAppointmentId} onOpenRecords={() => setView("emr")} onCompleted={async () => { const appointments = await fetchAppointments(); setBookings(appointments.map((appointment) => ({ ...appointment, room: "Clinic" }))); }} />}
+          {view === "treatments" && <TreatmentWorkspace initialAppointmentId={clinicalAppointmentId} onCompleted={async () => { const appointments = await fetchAppointments(); setBookings(appointments.map((appointment) => ({ ...appointment, room: "Clinic" }))); }} />}
+          {(view === "settings" || view === "profile") && <StaffSettingsWorkspace key={view} email={user?.email || ""} initialTab={view === "profile" ? "profile" : "general"} />}
         </div>
       </main>
     </div>

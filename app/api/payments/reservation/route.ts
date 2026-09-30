@@ -27,7 +27,6 @@ export async function POST(request: Request) {
   try {
     const user = await getRequestUser(request);
     if (!user?.email) return NextResponse.json({ error: "Sign in is required to pay the reservation fee." }, { status: 401 });
-    if (!paymongoSecretKey) return NextResponse.json({ error: "PayMongo is not configured yet. Add PAYMONGO_SECRET_KEY to enable reservation payments." }, { status: 503 });
 
     const { appointmentId } = await request.json();
     if (typeof appointmentId !== "string") return NextResponse.json({ error: "Invalid appointment." }, { status: 400 });
@@ -35,37 +34,47 @@ export async function POST(request: Request) {
     const admin = getAdminClient();
     const { data: appointment, error: appointmentError } = await admin
       .from("appointments")
-      .select("id, reference_no, clients!inner(email, full_name, phone)")
+      .select("id, reference_no, visit_kind, clients!inner(email, full_name, phone)")
       .eq("id", appointmentId)
+      .eq("status", "pending")
       .eq("clients.email", user.email)
       .single();
     if (appointmentError || !appointment) return NextResponse.json({ error: "Appointment not found." }, { status: 404 });
     const client = Array.isArray(appointment.clients) ? appointment.clients[0] : appointment.clients;
     if (!client) return NextResponse.json({ error: "Patient details were not found for this appointment." }, { status: 404 });
+    const isFollowUp = appointment.visit_kind === "consultation_follow_up";
+    if (!paymongoSecretKey) {
+      return NextResponse.json({ error: "PayMongo is not configured yet. Add PAYMONGO_SECRET_KEY to enable reservation payments." }, { status: 503 });
+    }
 
     const origin = new URL(request.url).origin;
     const authorization = `Basic ${Buffer.from(`${paymongoSecretKey}:`).toString("base64")}`;
-    const paymongoResponse = await fetch("https://api.paymongo.com/v2/checkout_sessions", {
-      method: "POST",
-      headers: { Authorization: authorization, "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({
-        data: {
-          attributes: {
-            billing: {
-              name: client.full_name,
-              email: client.email,
-              phone: client.phone,
+    let paymongoResponse: Response;
+    try {
+      paymongoResponse = await fetch("https://api.paymongo.com/v2/checkout_sessions", {
+        method: "POST",
+        headers: { Authorization: authorization, "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({
+          data: {
+            attributes: {
+              billing: {
+                name: client.full_name,
+                email: client.email,
+                phone: client.phone,
+              },
+              line_items: [{ amount: RESERVATION_FEE_CENTAVOS, currency: "PHP", name: isFollowUp ? "The Klinique follow-up check-up" : "The Klinique reservation fee", quantity: 1 }],
+              payment_method_types: ["qrph"],
+              description: `${isFollowUp ? "Full follow-up check-up fee" : "Reservation fee"} for ${appointment.reference_no}`,
+              reference_number: appointment.reference_no,
+              success_url: `${origin}/dashboard/patient?payment=return&appointment=${encodeURIComponent(appointment.id)}`,
+              cancel_url: `${origin}/dashboard/patient?payment=cancelled&appointment=${encodeURIComponent(appointment.id)}`,
             },
-            line_items: [{ amount: RESERVATION_FEE_CENTAVOS, currency: "PHP", name: "The Klinique reservation fee", quantity: 1 }],
-            payment_method_types: ["qrph"],
-            description: `Reservation fee for ${appointment.reference_no}`,
-            reference_number: appointment.reference_no,
-            success_url: `${origin}/booking?payment=return`,
-            cancel_url: `${origin}/booking?payment=cancelled`,
           },
-        },
-      }),
-    });
+        }),
+      });
+    } catch (error) {
+      throw error;
+    }
     const paymongo = await paymongoResponse.json();
     if (!paymongoResponse.ok) {
       console.error("PayMongo checkout error:", paymongo);
@@ -73,13 +82,18 @@ export async function POST(request: Request) {
     }
 
     const checkoutUrl = paymongo?.data?.attributes?.checkout_url;
-    if (typeof checkoutUrl !== "string") return NextResponse.json({ error: "PayMongo did not return a checkout URL." }, { status: 502 });
+    if (typeof checkoutUrl !== "string") {
+      return NextResponse.json({ error: "PayMongo did not return a checkout URL." }, { status: 502 });
+    }
 
-    await admin
+    const { error: paymentUpdateError } = await admin
       .from("payments")
-      .update({ paymongo_payment_id: paymongo.data.id, status: "awaiting_payment", metadata: { kind: "reservation_fee", checkout_id: paymongo.data.id, credited_to_visit: true } })
+      .update({ paymongo_payment_id: paymongo.data.id, status: "awaiting_payment", metadata: isFollowUp ? { kind: "consultation_follow_up_fee", checkout_id: paymongo.data.id, credited_to_visit: false, full_fee: true } : { kind: "reservation_fee", checkout_id: paymongo.data.id, credited_to_visit: true } })
       .eq("appointment_id", appointment.id)
       .eq("amount", RESERVATION_FEE_PHP);
+    if (paymentUpdateError) {
+      throw paymentUpdateError;
+    }
 
     return NextResponse.json({ checkoutUrl });
   } catch (error) {
