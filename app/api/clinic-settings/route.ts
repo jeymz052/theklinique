@@ -33,6 +33,10 @@ async function authorize(request: Request) {
   return user && await canManage(user) ? user : null;
 }
 
+function slugify(value: string) {
+  return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
 export async function GET(request: Request) {
   if (!await authorize(request)) return NextResponse.json({ error: "Doctor or superadmin access is required." }, { status: 403 });
   try {
@@ -40,14 +44,72 @@ export async function GET(request: Request) {
     const [{ data: settings, error: settingsError }, { data: categories, error: categoryError }, { data: services, error: servicesError }, { data: products, error: productsError }] = await Promise.all([
       db.from("clinic_settings").select("*").eq("id", 1).single(),
       db.from("service_categories").select("id, name, slug, sort_order").order("sort_order"),
-      db.from("services").select("id, category_id, name, slug, description, price, price_note, duration_mins, is_active, sort_order").order("sort_order"),
-      db.from("products").select("id, category, name, description, price, is_active, sort_order").order("sort_order"),
+      db.from("services").select("id, category_id, name, slug, description, price, price_note, duration_mins, is_active, sort_order").eq("is_active", true).order("sort_order"),
+      db.from("products").select("id, category, name, description, price, is_active, sort_order").eq("is_active", true).order("sort_order"),
     ]);
     if (settingsError || categoryError || servicesError || productsError) throw settingsError || categoryError || servicesError || productsError;
     return NextResponse.json({ settings, categories: categories || [], services: services || [], products: products || [] });
   } catch (error) {
     console.error("Unable to load clinic settings:", error);
     return NextResponse.json({ error: "Unable to load clinic settings. Apply the latest database migration first." }, { status: 500 });
+  }
+}
+
+export async function POST(request: Request) {
+  if (!await authorize(request)) return NextResponse.json({ error: "Doctor or superadmin access is required." }, { status: 403 });
+  try {
+    const body = await request.json();
+    const db = adminClient();
+    const name = String(body.name || "").trim();
+    const price = Number(body.price);
+    if (!name || !Number.isFinite(price) || price < 0) return NextResponse.json({ error: "Enter a name and a non-negative price." }, { status: 400 });
+    if (body.type === "service") {
+      const categoryId = String(body.categoryId || "");
+      const duration = Number(body.durationMins);
+      const slug = slugify(String(body.slug || name));
+      if (!UUID.test(categoryId) || !slug || !Number.isInteger(duration) || duration < 5 || duration > 480) return NextResponse.json({ error: "Choose a category and enter a duration between 5 and 480 minutes." }, { status: 400 });
+      const { data, error } = await db.from("services").insert({ category_id: categoryId, name, slug, description: String(body.description || "").trim() || null, price, duration_mins: duration, is_active: true }).select("id, category_id, name, slug, description, price, price_note, duration_mins, is_active, sort_order").single();
+      if (error?.code === "23505") return NextResponse.json({ error: "A service with this name or slug already exists." }, { status: 409 });
+      if (error) throw error;
+      return NextResponse.json({ service: data }, { status: 201 });
+    }
+    if (body.type === "product") {
+      const category = String(body.category || "Clinic Package").trim();
+      const { data, error } = await db.from("products").insert({ category, name, description: String(body.description || "").trim() || null, price, is_active: true }).select("id, category, name, description, price, is_active, sort_order").single();
+      if (error) throw error;
+      return NextResponse.json({ product: data }, { status: 201 });
+    }
+    return NextResponse.json({ error: "Unknown catalog item type." }, { status: 400 });
+  } catch (error) {
+    console.error("Unable to add catalog item:", error);
+    return NextResponse.json({ error: "Unable to add the catalog item." }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: Request) {
+  if (!await authorize(request)) return NextResponse.json({ error: "Doctor or superadmin access is required." }, { status: 403 });
+  try {
+    const body = await request.json();
+    const id = String(body.id || "");
+    const table = body.type === "service" ? "services" : body.type === "product" ? "products" : null;
+    if (!table || !UUID.test(id)) return NextResponse.json({ error: "Choose a valid catalog item to remove." }, { status: 400 });
+
+    const db = adminClient();
+    const { error: deleteError } = await db.from(table).delete().eq("id", id);
+    if (!deleteError) return NextResponse.json({ removed: true, archived: false });
+
+    // Existing appointments and orders deliberately restrict hard deletion.
+    // Keep their historical reference intact, but remove the item everywhere
+    // patients can create a new booking.
+    if (deleteError.code === "23503") {
+      const { error: archiveError } = await db.from(table).update({ is_active: false }).eq("id", id);
+      if (archiveError) throw archiveError;
+      return NextResponse.json({ removed: true, archived: true });
+    }
+    throw deleteError;
+  } catch (error) {
+    console.error("Unable to remove catalog item:", error);
+    return NextResponse.json({ error: "Unable to remove the catalog item." }, { status: 500 });
   }
 }
 
@@ -61,8 +123,12 @@ export async function PATCH(request: Request) {
       const id = String(body.id || "");
       const price = Number(body.price);
       const name = String(body.name || "").trim();
-      if (!UUID.test(id) || !name || !Number.isFinite(price) || price < 0) return NextResponse.json({ error: "Enter a valid service name and non-negative price." }, { status: 400 });
-      const { data, error } = await db.from("services").update({ name, price }).eq("id", id).select("id, name, price").single();
+      const categoryId = String(body.categoryId || "");
+      const duration = Number(body.durationMins);
+      if (!UUID.test(id) || !UUID.test(categoryId) || !name || !Number.isFinite(price) || price < 0 || !Number.isInteger(duration) || duration < 5 || duration > 480) return NextResponse.json({ error: "Enter valid service details, a non-negative price, and a duration between 5 and 480 minutes." }, { status: 400 });
+      const update: Record<string, unknown> = { name, category_id: categoryId, description: String(body.description || "").trim() || null, price, duration_mins: duration };
+      if (typeof body.isActive === "boolean") update.is_active = body.isActive;
+      const { data, error } = await db.from("services").update(update).eq("id", id).select("id, category_id, name, slug, description, price, price_note, duration_mins, is_active").single();
       if (error) throw error;
       return NextResponse.json({ service: data });
     }
@@ -70,8 +136,11 @@ export async function PATCH(request: Request) {
       const id = String(body.id || "");
       const price = Number(body.price);
       const name = String(body.name || "").trim();
-      if (!UUID.test(id) || !name || !Number.isFinite(price) || price < 0) return NextResponse.json({ error: "Enter a valid package name and non-negative price." }, { status: 400 });
-      const { data, error } = await db.from("products").update({ name, price }).eq("id", id).select("id, name, price").single();
+      const category = String(body.category || "").trim();
+      if (!UUID.test(id) || !name || !category || !Number.isFinite(price) || price < 0) return NextResponse.json({ error: "Enter a valid package name, category, and non-negative price." }, { status: 400 });
+      const update: Record<string, unknown> = { name, category, description: String(body.description || "").trim() || null, price };
+      if (typeof body.isActive === "boolean") update.is_active = body.isActive;
+      const { data, error } = await db.from("products").update(update).eq("id", id).select("id, category, name, description, price, is_active").single();
       if (error) throw error;
       return NextResponse.json({ product: data });
     }
