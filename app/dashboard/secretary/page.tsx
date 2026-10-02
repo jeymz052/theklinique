@@ -10,8 +10,10 @@ import DashboardAccountMenu from "@/app/components/DashboardAccountMenu";
 import AppointmentNotifications from "@/app/components/AppointmentNotifications";
 import DashboardInsights from "@/app/components/DashboardInsights";
 import BasicSettingsWorkspace from "@/app/components/BasicSettingsWorkspace";
+import ClinicCalendar from "@/app/components/ClinicCalendar";
+import WebsiteContentManager from "@/app/components/WebsiteContentManager";
 
-type SecretaryView = "overview" | "schedule" | "patients" | "profile" | "settings";
+type SecretaryView = "overview" | "schedule" | "calendar" | "patients" | "website-content" | "profile" | "settings";
 
 export default function SecretaryDashboard() {
   const router = useRouter();
@@ -30,9 +32,10 @@ export default function SecretaryDashboard() {
 
   useEffect(() => {
     const requestedView = new URLSearchParams(window.location.search).get("view");
-    if (requestedView !== "profile" && requestedView !== "settings") return;
+    const allowedViews: SecretaryView[] = ["overview", "schedule", "calendar", "patients", "website-content", "profile", "settings"];
+    if (!requestedView || !allowedViews.includes(requestedView as SecretaryView)) return;
     window.history.replaceState({}, "", "/dashboard/secretary");
-    queueMicrotask(() => setView(requestedView));
+    queueMicrotask(() => setView(requestedView as SecretaryView));
   }, []);
 
   const todayKey = new Date().toISOString().slice(0, 10);
@@ -82,7 +85,9 @@ export default function SecretaryDashboard() {
               {([
                 ["overview", "fa-table-columns", "Desk overview"],
                 ["schedule", "fa-calendar-check", "Appointments"],
+                ["calendar", "fa-calendar", "Calendar View"],
                 ["patients", "fa-address-book", "Patient directory"],
+                ["website-content", "fa-wand-magic-sparkles", "Website Content"],
                 ["settings", "fa-gear", "Settings"],
               ] as const).map(([key, icon, label]) => (
                 <button key={key} className={`dk-nav-item ${view === key || (key === "settings" && view === "profile") ? "active" : ""}`} onClick={() => { setView(key); setMobileNavOpen(false); }}><i className={`fa-solid ${icon}`} /> {label}{key === "schedule" && <span className="dk-nav-pill">{pending.length}</span>}</button>
@@ -128,7 +133,7 @@ export default function SecretaryDashboard() {
                 { icon: "fa-calendar-check", label: "Appointments", action: () => setView("schedule") },
                 { icon: "fa-address-book", label: "Patient Directory", action: () => setView("patients") },
                 { icon: "fa-hourglass-half", label: "Pending Queue", action: () => { setStatus("pending"); setView("schedule"); } },
-                { icon: "fa-gear", label: "Account Settings", action: () => setView("settings") },
+                { icon: "fa-wand-magic-sparkles", label: "Website Content", action: () => setView("website-content") },
               ].map((item) => <button type="button" className="dk-quick-card" key={item.label} onClick={item.action}><i className={`fa-solid ${item.icon} dk-quick-icon`} /><span className="dk-quick-label">{item.label}</span><i className="fa-solid fa-arrow-right dk-quick-arrow" /></button>)}
             </div>
             <DashboardInsights appointments={appointments} role="secretary" />
@@ -139,6 +144,8 @@ export default function SecretaryDashboard() {
             <div className="dk-panel-hdr"><div className="dk-panel-title-wrap"><i className="fa-solid fa-calendar-check" /><div><p className="dk-panel-title">Appointment desk</p><p className="dk-panel-sub">Search, confirm, or cancel clinic visits</p></div></div><div className="dk-pill-row"><select className="dk-modal-select" value={status} onChange={(event) => setStatus(event.target.value)}><option value="all">All statuses</option><option value="pending">Pending</option><option value="confirmed">Confirmed</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option></select><div className="dk-search"><i className="fa-solid fa-magnifying-glass" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Patient, phone, reference…" /></div></div></div>
             <AppointmentTable items={filtered} onStatus={changeStatus} />
           </div>}
+          {view === "calendar" && <ClinicCalendar />}
+          {view === "website-content" && <WebsiteContentManager />}
 
           {view === "patients" && <div className="dk-panel"><div className="dk-panel-hdr"><div className="dk-panel-title-wrap"><i className="fa-solid fa-address-book" /><div><p className="dk-panel-title">Patient directory</p><p className="dk-panel-sub">Contact and visit coordination details</p></div></div></div><div className="dk-table-wrap"><table className="dk-table"><thead><tr><th>Patient</th><th>Contact</th><th>Visits</th><th>Next visit</th></tr></thead><tbody>{patients.map((patient) => <tr key={patient.email}><td><p className="dk-cell-primary">{patient.name}</p><p className="dk-cell-secondary">{patient.email}</p></td><td>{patient.phone || "Not provided"}</td><td>{patient.visits}</td><td>{patient.nextVisit || "None scheduled"}</td></tr>)}</tbody></table></div></div>}
           {(view === "settings" || view === "profile") && <BasicSettingsWorkspace key={view} email={user?.email} initialTab={view === "profile" ? "profile" : "general"} />}

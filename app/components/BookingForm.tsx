@@ -91,12 +91,12 @@ const SERVICES = [
 ];
 
 type Category = { id: string; name: string; slug: string; sort_order: number };
-type CatalogService = { id: string; category_id: string; name: string; slug: string; description: string | null; price: number; price_note: string | null; duration_mins: number | null };
-type Product = { id: string; name: string; description: string | null; price: number; category: string };
+type CatalogService = { id: string; category_id: string; subcategory: string; name: string; slug: string; description: string | null; price: number; price_note: string | null; duration_mins: number | null };
+type Product = { id: string; name: string; description: string | null; price: number; category: string; subcategory: string };
 
 const FALLBACK_CATALOG = {
   categories: [{ id: "legacy", name: "Treatments", slug: "legacy", sort_order: 1 }],
-  services: SERVICES.map((service) => ({ id: service.id, category_id: "legacy", name: service.name, slug: service.slug, description: service.desc, price: Number(service.price.replace(/[^0-9]/g, "")) || 0, price_note: null, duration_mins: null })),
+  services: SERVICES.map((service) => ({ id: service.id, category_id: "legacy", subcategory: "General", name: service.name, slug: service.slug, description: service.desc, price: Number(service.price.replace(/[^0-9]/g, "")) || 0, price_note: null, duration_mins: null })),
   products: [] as Product[],
 };
 
@@ -638,7 +638,7 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
                     const added = primary || cartTreatmentIds.includes(item.id);
                     return <article key={item.id} className={`bk-catalog-card ${added ? "selected" : ""}`}>
                       <div className="bk-catalog-card-icon"><i className={`fa-solid ${treatmentIcon(item)}`} /></div>
-                      <div className="bk-catalog-card-copy"><small>{categories.find((category) => category.id === item.category_id)?.name}</small><strong>{item.name}</strong>{item.description && <p>{item.description}</p>}<span>{item.duration_mins && <><i className="fa-regular fa-clock" /> {item.duration_mins} min</>}<b>PHP {Number(item.price).toLocaleString()}</b></span></div>
+                      <div className="bk-catalog-card-copy"><small>{categories.find((category) => category.id === item.category_id)?.name} · {item.subcategory}</small><strong>{item.name}</strong>{item.description && <p>{item.description}</p>}<span>{item.duration_mins && <><i className="fa-regular fa-clock" /> {item.duration_mins} min</>}<b>PHP {Number(item.price).toLocaleString()}</b></span></div>
                       <button type="button" className={added ? "is-added" : ""} onClick={() => toggleCatalogTreatment(item.id)}>{added ? <><i className="fa-solid fa-check" /> In cart</> : <><i className="fa-solid fa-plus" /> Add</>}</button>
                     </article>;
                   })}
@@ -660,7 +660,7 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
                   <div className="bk-products-grid">
                     {products.map((product) => {
                       const selected = cartProductIds.includes(product.id);
-                      return <div key={product.id} className={`bk-product-card ${selected ? "selected" : ""}`}><div><strong>{product.name}</strong><span>PHP {Number(product.price).toLocaleString()}</span>{product.description && <p>{product.description}</p>}</div><button type="button" onClick={() => toggleProduct(product.id)}>{selected ? "Remove" : "Add"}</button></div>;
+                      return <div key={product.id} className={`bk-product-card ${selected ? "selected" : ""}`}><div><small>{product.category} · {product.subcategory}</small><strong>{product.name}</strong><span>PHP {Number(product.price).toLocaleString()}</span>{product.description && <p>{product.description}</p>}</div><button type="button" onClick={() => toggleProduct(product.id)}>{selected ? "Remove" : "Add"}</button></div>;
                     })}
                   </div>
                 </details>

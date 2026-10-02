@@ -16,9 +16,10 @@ import LiveClinicStatus from "@/app/components/LiveClinicStatus";
 import AccountHelpHub from "@/app/components/AccountHelpHub";
 import PatientPaymentsPage from "@/app/components/PatientPaymentsPage";
 import BasicSettingsWorkspace from "@/app/components/BasicSettingsWorkspace";
+import ClinicCalendar from "@/app/components/ClinicCalendar";
 
 type NavSection = "portal" | "appointments";
-type PatientView = "overview" | "documents" | "history" | "book" | "my-appts" | "payments" | "account-help" | "profile" | "settings";
+type PatientView = "overview" | "documents" | "history" | "book" | "my-appts" | "calendar" | "payments" | "account-help" | "profile" | "settings";
 
 export default function PatientDashboard() {
   const router = useRouter();
@@ -253,6 +254,7 @@ export default function PatientDashboard() {
                   <i className="fa-solid fa-list-check" />
                   My Appointments
                 </button>
+                <button type="button" className={`dk-nav-item ${view === "calendar" ? "active" : ""}`} onClick={() => setView("calendar")}><i className="fa-solid fa-calendar" /> Calendar View</button>
               </div>
             )}
           </div>
@@ -434,6 +436,7 @@ export default function PatientDashboard() {
               <PatientAppointments appointments={appointments} payingAppointmentId={payingAppointmentId} onPay={resumeReservationPayment} onVerify={verifyAppointmentPayment} onBook={() => setView("book")} rescheduleRequests={rescheduleRequests} onCancel={handleCancelAppointment} onReschedule={handleRescheduleAppointment} />
             </>
           )}
+          {view === "calendar" && <ClinicCalendar />}
 
           {view === "documents" && (
             <>

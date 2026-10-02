@@ -44,8 +44,8 @@ export async function GET(request: Request) {
     const [{ data: settings, error: settingsError }, { data: categories, error: categoryError }, { data: services, error: servicesError }, { data: products, error: productsError }] = await Promise.all([
       db.from("clinic_settings").select("*").eq("id", 1).single(),
       db.from("service_categories").select("id, name, slug, sort_order").order("sort_order"),
-      db.from("services").select("id, category_id, name, slug, description, price, price_note, duration_mins, is_active, sort_order").eq("is_active", true).order("sort_order"),
-      db.from("products").select("id, category, name, description, price, is_active, sort_order").eq("is_active", true).order("sort_order"),
+      db.from("services").select("id, category_id, subcategory, name, slug, description, price, price_note, duration_mins, is_active, sort_order").eq("is_active", true).order("sort_order"),
+      db.from("products").select("id, category, subcategory, name, description, price, is_active, sort_order").eq("is_active", true).order("sort_order"),
     ]);
     if (settingsError || categoryError || servicesError || productsError) throw settingsError || categoryError || servicesError || productsError;
     return NextResponse.json({ settings, categories: categories || [], services: services || [], products: products || [] });
@@ -66,16 +66,19 @@ export async function POST(request: Request) {
     if (body.type === "service") {
       const categoryId = String(body.categoryId || "");
       const duration = Number(body.durationMins);
+      const subcategory = String(body.subcategory || "").trim();
       const slug = slugify(String(body.slug || name));
-      if (!UUID.test(categoryId) || !slug || !Number.isInteger(duration) || duration < 5 || duration > 480) return NextResponse.json({ error: "Choose a category and enter a duration between 5 and 480 minutes." }, { status: 400 });
-      const { data, error } = await db.from("services").insert({ category_id: categoryId, name, slug, description: String(body.description || "").trim() || null, price, duration_mins: duration, is_active: true }).select("id, category_id, name, slug, description, price, price_note, duration_mins, is_active, sort_order").single();
+      if (!UUID.test(categoryId) || !subcategory || !slug || !Number.isInteger(duration) || duration < 5 || duration > 480) return NextResponse.json({ error: "Choose a category and subcategory, then enter a duration between 5 and 480 minutes." }, { status: 400 });
+      const { data, error } = await db.from("services").insert({ category_id: categoryId, subcategory, name, slug, description: String(body.description || "").trim() || null, price, duration_mins: duration, is_active: true }).select("id, category_id, subcategory, name, slug, description, price, price_note, duration_mins, is_active, sort_order").single();
       if (error?.code === "23505") return NextResponse.json({ error: "A service with this name or slug already exists." }, { status: 409 });
       if (error) throw error;
       return NextResponse.json({ service: data }, { status: 201 });
     }
     if (body.type === "product") {
       const category = String(body.category || "Clinic Package").trim();
-      const { data, error } = await db.from("products").insert({ category, name, description: String(body.description || "").trim() || null, price, is_active: true }).select("id, category, name, description, price, is_active, sort_order").single();
+      const subcategory = String(body.subcategory || "").trim();
+      if (!subcategory) return NextResponse.json({ error: "Choose a package subcategory." }, { status: 400 });
+      const { data, error } = await db.from("products").insert({ category, subcategory, name, description: String(body.description || "").trim() || null, price, is_active: true }).select("id, category, subcategory, name, description, price, is_active, sort_order").single();
       if (error) throw error;
       return NextResponse.json({ product: data }, { status: 201 });
     }
@@ -124,11 +127,12 @@ export async function PATCH(request: Request) {
       const price = Number(body.price);
       const name = String(body.name || "").trim();
       const categoryId = String(body.categoryId || "");
+      const subcategory = String(body.subcategory || "").trim();
       const duration = Number(body.durationMins);
-      if (!UUID.test(id) || !UUID.test(categoryId) || !name || !Number.isFinite(price) || price < 0 || !Number.isInteger(duration) || duration < 5 || duration > 480) return NextResponse.json({ error: "Enter valid service details, a non-negative price, and a duration between 5 and 480 minutes." }, { status: 400 });
-      const update: Record<string, unknown> = { name, category_id: categoryId, description: String(body.description || "").trim() || null, price, duration_mins: duration };
+      if (!UUID.test(id) || !UUID.test(categoryId) || !subcategory || !name || !Number.isFinite(price) || price < 0 || !Number.isInteger(duration) || duration < 5 || duration > 480) return NextResponse.json({ error: "Enter valid category, subcategory, service details, price, and duration." }, { status: 400 });
+      const update: Record<string, unknown> = { name, category_id: categoryId, subcategory, description: String(body.description || "").trim() || null, price, duration_mins: duration };
       if (typeof body.isActive === "boolean") update.is_active = body.isActive;
-      const { data, error } = await db.from("services").update(update).eq("id", id).select("id, category_id, name, slug, description, price, price_note, duration_mins, is_active").single();
+      const { data, error } = await db.from("services").update(update).eq("id", id).select("id, category_id, subcategory, name, slug, description, price, price_note, duration_mins, is_active").single();
       if (error) throw error;
       return NextResponse.json({ service: data });
     }
@@ -137,10 +141,11 @@ export async function PATCH(request: Request) {
       const price = Number(body.price);
       const name = String(body.name || "").trim();
       const category = String(body.category || "").trim();
-      if (!UUID.test(id) || !name || !category || !Number.isFinite(price) || price < 0) return NextResponse.json({ error: "Enter a valid package name, category, and non-negative price." }, { status: 400 });
-      const update: Record<string, unknown> = { name, category, description: String(body.description || "").trim() || null, price };
+      const subcategory = String(body.subcategory || "").trim();
+      if (!UUID.test(id) || !name || !category || !subcategory || !Number.isFinite(price) || price < 0) return NextResponse.json({ error: "Enter a valid package name, category, subcategory, and non-negative price." }, { status: 400 });
+      const update: Record<string, unknown> = { name, category, subcategory, description: String(body.description || "").trim() || null, price };
       if (typeof body.isActive === "boolean") update.is_active = body.isActive;
-      const { data, error } = await db.from("products").update(update).eq("id", id).select("id, category, name, description, price, is_active").single();
+      const { data, error } = await db.from("products").update(update).eq("id", id).select("id, category, subcategory, name, description, price, is_active").single();
       if (error) throw error;
       return NextResponse.json({ product: data });
     }

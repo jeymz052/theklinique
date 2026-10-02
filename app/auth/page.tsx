@@ -100,7 +100,7 @@ const CANCELLATION_SECTIONS = [
   },
   {
     title: "9. How to Cancel or Reschedule",
-    body: "To cancel or reschedule your appointment, please contact us via: Instagram DM @thekliniqueph · Facebook: The Klinique by Dr. Khuryl · Or log in to your Patient Portal and manage your booking from your dashboard.",
+    body: "To cancel or reschedule your appointment, please contact us via: Instagram DM @thekliniqueph · Facebook: The Klinique by Dr. Kharyl · Or log in to your Patient Portal and manage your booking from your dashboard.",
   },
 ];
 

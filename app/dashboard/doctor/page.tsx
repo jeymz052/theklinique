@@ -15,11 +15,13 @@ import PatientRecordsWorkspace from "@/app/components/PatientRecordsWorkspace";
 import ConsultationWorkspace from "@/app/components/ConsultationWorkspace";
 import TreatmentWorkspace from "@/app/components/TreatmentWorkspace";
 import DoctorScheduleManager from "@/app/components/DoctorScheduleManager";
+import ClinicCalendar from "@/app/components/ClinicCalendar";
+import WebsiteContentManager from "@/app/components/WebsiteContentManager";
 import { appointmentStatusLabel, fetchAppointments, updateAppointmentStatus, type Appointment, type AppointmentStatus } from "@/lib/appointments";
 import { fetchRescheduleRequests, reviewRescheduleRequest, type RescheduleRequest } from "@/lib/rescheduleRequests";
 
 type NavSection = "scheduling" | "clinical";
-type DoctorView = "dashboard" | "availability" | "blocked-dates" | "all-appts" | "emr" | "consultations" | "treatments" | "rooms" | "profile" | "settings";
+type DoctorView = "dashboard" | "calendar" | "website-content" | "availability" | "blocked-dates" | "all-appts" | "emr" | "consultations" | "treatments" | "rooms" | "profile" | "settings";
 
 interface Booking extends Appointment {
   room: string;
@@ -69,7 +71,7 @@ export default function DoctorDashboard() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const requestedView = params.get("view");
-    if (requestedView === "all-appts" || requestedView === "availability" || requestedView === "blocked-dates" || requestedView === "profile" || requestedView === "settings") {
+    if (requestedView === "calendar" || requestedView === "website-content" || requestedView === "all-appts" || requestedView === "availability" || requestedView === "blocked-dates" || requestedView === "profile" || requestedView === "settings") {
       window.history.replaceState({}, "", "/dashboard/doctor");
       queueMicrotask(() => setView(requestedView));
     }
@@ -295,6 +297,7 @@ export default function DoctorDashboard() {
               <div className="dk-nav-items">
                 {[
                   { key: "all-appts",  icon: "fa-list-check",       label: "All Appointments"    },
+                  { key: "calendar", icon: "fa-calendar", label: "Calendar View" },
                   { key: "availability", icon: "fa-calendar-days", label: "Doctor Schedule"     },
                   { key: "blocked-dates", icon: "fa-calendar-xmark", label: "Blocked Dates"     },
                 ].map((item) => (
@@ -335,6 +338,13 @@ export default function DoctorDashboard() {
             <button type="button" id="nav-emr" className={`dk-nav-item ${view === "emr" ? "active" : ""}`} onClick={() => setView("emr")}>
               <i className="fa-solid fa-notes-medical" />
               Patient Records
+            </button>
+          </div>
+
+          <div className="dk-nav-section">
+            <button type="button" id="nav-website-content" className={`dk-nav-item ${view === "website-content" ? "active" : ""}`} onClick={() => setView("website-content")}>
+              <i className="fa-solid fa-wand-magic-sparkles" />
+              Website Content
             </button>
           </div>
 
@@ -391,6 +401,8 @@ export default function DoctorDashboard() {
               <button type="button" className="dk-cta-btn" onClick={() => setShowAddModal(true)}><i className="fa-solid fa-calendar-plus" /> Add consultation</button>
             </div>
           )}
+          {view === "calendar" && <ClinicCalendar />}
+          {view === "website-content" && <WebsiteContentManager />}
           {view === "dashboard" && (
           <div className="dk-stats-grid dk-stats-grid--4col" style={{ marginBottom: "1.5rem" }}>
             {stats.map((s) => (

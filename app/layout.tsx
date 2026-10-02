@@ -4,7 +4,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "The Klinique | Medical Aesthetic Clinic — Cagayan de Oro City",
   description:
-    "The Klinique by Dr. Khuryl — Expert medical aesthetic care in Cagayan de Oro City. Botox, fillers, skin boosters, lasers, and more. Book your consultation today.",
+    "The Klinique by Dr. Kharyl — Expert medical aesthetic care in Cagayan de Oro City. Botox, fillers, skin boosters, lasers, and more. Book your consultation today.",
 };
 
 // Keep CSS media queries tied to the actual phone width instead of a desktop-sized layout viewport.

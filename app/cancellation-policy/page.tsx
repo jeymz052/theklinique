@@ -124,7 +124,7 @@ export default function CancellationPolicyPage() {
                 <strong>Instagram DM:</strong> @thekliniqueph
               </li>
               <li>
-                <strong>Facebook:</strong> The Klinique by Dr. Khuryl
+                <strong>Facebook:</strong> The Klinique by Dr. Kharyl
               </li>
               <li>
                 <strong>Patient Portal:</strong> Log in and manage your booking from your dashboard

@@ -130,7 +130,7 @@ export default function TermsPage() {
             </p>
             <ul>
               <li>Instagram: <strong>@thekliniqueph</strong></li>
-              <li>Facebook: <strong>The Klinique by Dr. Khuryl</strong></li>
+              <li>Facebook: <strong>The Klinique by Dr. Kharyl</strong></li>
               <li>Location: Cagayan de Oro City, PH 9000</li>
             </ul>
           </section>

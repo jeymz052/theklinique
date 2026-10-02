@@ -61,13 +61,35 @@ function serialize(row: PatientRow) {
 
 const select = "id, auth_user_id, patient_no, full_name, email, phone, date_of_birth, sex, address, civil_status, blood_type, allergies, medical_history, current_medications, emergency_contact_name, emergency_contact_phone, notes, record_source, created_at, appointments(appointment_date, status), treatment_cases(id, status, completed_at, services(name))";
 
+async function staffAccounts() {
+  const { data, error } = await adminClient().from("profiles").select("id, email").in("role", ["superadmin", "doctor", "secretary"]);
+  if (error) throw error;
+  return {
+    ids: new Set((data || []).map((item) => String(item.id))),
+    emails: new Set((data || []).map((item) => String(item.email || "").toLowerCase()).filter(Boolean)),
+  };
+}
+
+async function emailBelongsToStaff(email: string) {
+  if (!email) return false;
+  const { count, error } = await adminClient().from("profiles").select("id", { count: "exact", head: true }).ilike("email", email).in("role", ["superadmin", "doctor", "secretary"]);
+  if (error) throw error;
+  return Boolean(count);
+}
+
 export async function GET(request: Request) {
   const auth = await requireStaff(request);
   if (auth.error) return auth.error;
   try {
-    const { data, error } = await adminClient().from("clients").select(select).order("created_at", { ascending: false });
+    const [{ data, error }, staff] = await Promise.all([
+      adminClient().from("clients").select(select).order("created_at", { ascending: false }),
+      staffAccounts(),
+    ]);
     if (error) throw error;
-    return NextResponse.json({ patients: ((data || []) as unknown as PatientRow[]).map(serialize) });
+    const patients = ((data || []) as unknown as PatientRow[]).filter((row) =>
+      !(row.auth_user_id && staff.ids.has(row.auth_user_id)) && !(row.email && staff.emails.has(row.email.toLowerCase())),
+    );
+    return NextResponse.json({ patients: patients.map(serialize) });
   } catch (error) {
     console.error("Unable to load patient records:", error);
     return NextResponse.json({ error: "Unable to load patient records." }, { status: 500 });
@@ -83,6 +105,7 @@ export async function POST(request: Request) {
     const email = String(body.email || "").trim().toLowerCase();
     const phone = String(body.phone || "").trim();
     if (!fullName) return NextResponse.json({ error: "Patient name is required." }, { status: 400 });
+    if (await emailBelongsToStaff(email)) return NextResponse.json({ error: "Clinic staff accounts cannot be added as patients." }, { status: 409 });
     const { data, error } = await adminClient().from("clients").insert({
       full_name: fullName, email: email || null, phone, date_of_birth: body.dateOfBirth || null,
       sex: body.sex || null, address: String(body.address || "").trim() || null, notes: String(body.notes || "").trim() || null,
@@ -107,6 +130,7 @@ export async function PATCH(request: Request) {
     const email = String(body.email || "").trim().toLowerCase();
     const sex = ["female", "male", "other", "prefer_not_to_say"].includes(body.sex) ? body.sex : null;
     if (!id || !fullName) return NextResponse.json({ error: "Patient and full name are required." }, { status: 400 });
+    if (await emailBelongsToStaff(email)) return NextResponse.json({ error: "Clinic staff accounts cannot be saved as patients." }, { status: 409 });
     const changes = {
       full_name: fullName, email: email || null, phone: String(body.phone || "").trim(), date_of_birth: body.dateOfBirth || null, sex,
       address: String(body.address || "").trim() || null, civil_status: String(body.civilStatus || "").trim() || null,
