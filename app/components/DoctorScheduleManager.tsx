@@ -32,6 +32,8 @@ export default function DoctorScheduleManager({ doctorName, initialTab = "schedu
   const [closeTime, setCloseTime] = useState(DEFAULT_CLOSE);
   const [active, setActive] = useState(true);
   const [blockDate, setBlockDate] = useState("");
+  const [blockEndDate, setBlockEndDate] = useState("");
+  const [blockMode, setBlockMode] = useState<"single" | "range">("single");
   const [blockReason, setBlockReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -63,6 +65,9 @@ export default function DoctorScheduleManager({ doctorName, initialTab = "schedu
   const todayIndex = new Date().getDay();
   const todayKey = new Date().toLocaleDateString("en-CA");
   const nextBlock = blocks.find((block) => block.blocked_date >= todayKey);
+  const blockRangeDays = blockDate && (blockMode === "single" || blockEndDate) && (blockMode === "single" || blockEndDate >= blockDate)
+    ? Math.floor((Date.parse(`${blockMode === "single" ? blockDate : blockEndDate}T00:00:00Z`) - Date.parse(`${blockDate}T00:00:00Z`)) / 86_400_000) + 1
+    : 0;
 
   const startEdit = (day: number) => {
     const row = byDay.get(day);
@@ -84,8 +89,10 @@ export default function DoctorScheduleManager({ doctorName, initialTab = "schedu
   const addBlock = async (event: React.FormEvent) => {
     event.preventDefault(); setBusy(true); setError(""); setMessage("");
     try {
-      await authorizedFetch("/api/doctor-schedule", { method: "POST", body: JSON.stringify({ date: blockDate, reason: blockReason }) });
-      await load(); setBlockDate(""); setBlockReason(""); setMessage("Blocked date added. Patients can no longer book that day.");
+      const result = await authorizedFetch("/api/doctor-schedule", { method: "POST", body: JSON.stringify({ startDate: blockDate, endDate: blockMode === "range" ? blockEndDate : blockDate, reason: blockReason }) });
+      await load(); setBlockDate(""); setBlockEndDate(""); setBlockReason("");
+      const skipped = result.requested - result.added;
+      setMessage(`${result.added} ${result.added === 1 ? "date" : "dates"} blocked.${skipped > 0 ? ` ${skipped} already blocked and skipped.` : ""} Patients can no longer book ${result.added === 1 ? "that day" : "those days"}.`);
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to block date."); }
     finally { setBusy(false); }
   };
@@ -161,7 +168,12 @@ export default function DoctorScheduleManager({ doctorName, initialTab = "schedu
         </section>
         <aside className="dk-panel dk-schedule-editor">
           <div className="dk-panel-hdr dk-block-editor-head"><div className="dk-block-editor-icon"><i className="fa-solid fa-umbrella-beach" /></div><div><p className="dk-workspace-label">New exception</p><p className="dk-panel-title">Plan time away</p></div></div>
-          <form className="dk-schedule-form" onSubmit={addBlock}><label>Date<input type="date" value={blockDate} onChange={(event) => setBlockDate(event.target.value)} required /></label><label>Reason <small>(optional)</small><textarea value={blockReason} onChange={(event) => setBlockReason(event.target.value)} placeholder="e.g. Conference, holiday, clinic maintenance" rows={4} /></label><div className="dk-block-impact"><i className="fa-solid fa-circle-info" /><span><strong>What happens?</strong><small>All generated appointment slots are removed for this date. Existing appointments remain in your records.</small></span></div><button className="dk-btn dk-btn-primary dk-schedule-save" disabled={busy}>{busy ? <i className="fa-solid fa-spinner fa-spin" /> : <i className="fa-solid fa-calendar-xmark" />} Block this date</button></form>
+          <form className="dk-schedule-form" onSubmit={addBlock}>
+            <div className="dk-block-mode" role="group" aria-label="Blocked date type"><button type="button" className={blockMode === "single" ? "active" : ""} onClick={() => { setBlockMode("single"); setBlockEndDate(""); }}><i className="fa-regular fa-calendar" /> Single day</button><button type="button" className={blockMode === "range" ? "active" : ""} onClick={() => setBlockMode("range")}><i className="fa-solid fa-calendar-days" /> Date range</button></div>
+            <div className={blockMode === "range" ? "dk-block-date-grid" : ""}><label>{blockMode === "range" ? "From" : "Date"}<input type="date" value={blockDate} max={blockMode === "range" && blockEndDate ? blockEndDate : undefined} onChange={(event) => setBlockDate(event.target.value)} required /></label>{blockMode === "range" && <label>Up to<input type="date" value={blockEndDate} min={blockDate || undefined} onChange={(event) => setBlockEndDate(event.target.value)} required /></label>}</div>
+            {blockMode === "range" && <div className={`dk-block-range-preview ${blockRangeDays ? "valid" : ""}`}><i className="fa-solid fa-arrow-right-long" /><span><strong>{blockRangeDays ? `${blockRangeDays} ${blockRangeDays === 1 ? "day" : "days"} selected` : "Select the end date"}</strong><small>{blockRangeDays ? `${dateValue(blockDate).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })} through ${dateValue(blockEndDate).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })}` : "The range includes both the start and end dates."}</small></span></div>}
+            <label>Reason <small>(optional)</small><textarea value={blockReason} onChange={(event) => setBlockReason(event.target.value)} placeholder="e.g. Conference, holiday, clinic maintenance" rows={4} /></label><div className="dk-block-impact"><i className="fa-solid fa-circle-info" /><span><strong>What happens?</strong><small>All generated appointment slots are removed for {blockMode === "range" ? "every date in this range" : "this date"}. Existing appointments remain in your records.</small></span></div><button className="dk-btn dk-btn-primary dk-schedule-save" disabled={busy || !blockRangeDays}>{busy ? <i className="fa-solid fa-spinner fa-spin" /> : <i className="fa-solid fa-calendar-xmark" />} {blockMode === "range" ? `Block ${blockRangeDays || "selected"} ${blockRangeDays === 1 ? "day" : "days"}` : "Block this date"}</button>
+          </form>
         </aside>
       </div>}
     </div>

@@ -17,11 +17,14 @@ import TreatmentWorkspace from "@/app/components/TreatmentWorkspace";
 import DoctorScheduleManager from "@/app/components/DoctorScheduleManager";
 import ClinicCalendar from "@/app/components/ClinicCalendar";
 import WebsiteContentManager from "@/app/components/WebsiteContentManager";
+import BlogBuilder from "@/app/components/BlogBuilder";
+import StaffAppointmentModal from "@/app/components/StaffAppointmentModal";
+import type { PatientRecord } from "@/lib/patients";
 import { appointmentStatusLabel, fetchAppointments, updateAppointmentStatus, type Appointment, type AppointmentStatus } from "@/lib/appointments";
 import { fetchRescheduleRequests, reviewRescheduleRequest, type RescheduleRequest } from "@/lib/rescheduleRequests";
 
 type NavSection = "scheduling" | "clinical";
-type DoctorView = "dashboard" | "calendar" | "website-content" | "availability" | "blocked-dates" | "all-appts" | "emr" | "consultations" | "treatments" | "rooms" | "profile" | "settings";
+type DoctorView = "dashboard" | "calendar" | "website-content" | "blog-builder" | "availability" | "blocked-dates" | "all-appts" | "emr" | "consultations" | "treatments" | "rooms" | "profile" | "settings";
 
 interface Booking extends Appointment {
   room: string;
@@ -36,16 +39,8 @@ export default function DoctorDashboard() {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [rescheduleRequests, setRescheduleRequests] = useState<RescheduleRequest[]>([]);
   const [signingOut, setSigningOut] = useState(false);
-  const [showAddModal, setShowAddModal] = useState(false);
-
-  const [newPatient, setNewPatient]   = useState("");
-  const [newEmail, setNewEmail]       = useState("");
-  const [newPhone, setNewPhone]       = useState("");
-  const [newService, setNewService]   = useState("consult-dr-kharyl");
-  const [newTime, setNewTime]         = useState("09:00");
-  const [newNotes, setNewNotes]       = useState("");
+  const [bookingPatient, setBookingPatient] = useState<PatientRecord | null>(null);
   const [dataError, setDataError] = useState("");
-  const [savingConsultation, setSavingConsultation] = useState(false);
   const [clinicalAppointmentId, setClinicalAppointmentId] = useState<string | null>(null);
 
   const today    = new Date();
@@ -53,7 +48,6 @@ export default function DoctorDashboard() {
   const dateStr  = today.toLocaleDateString("en-PH", { month: "long", day: "numeric", year: "numeric" });
   const todayStr = today.toLocaleDateString("en-PH", { month: "long", day: "numeric", year: "numeric" });
   const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
-  const [newAppointmentDate, setNewAppointmentDate] = useState(todayKey);
 
   const todayBookings = bookings.filter((b) => b.date === todayKey);
 
@@ -71,11 +65,15 @@ export default function DoctorDashboard() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const requestedView = params.get("view");
-    if (requestedView === "calendar" || requestedView === "website-content" || requestedView === "all-appts" || requestedView === "availability" || requestedView === "blocked-dates" || requestedView === "profile" || requestedView === "settings") {
+    if (requestedView === "calendar" || requestedView === "website-content" || requestedView === "blog-builder" || requestedView === "all-appts" || requestedView === "availability" || requestedView === "blocked-dates" || requestedView === "profile" || requestedView === "settings") {
       window.history.replaceState({}, "", "/dashboard/doctor");
       queueMicrotask(() => setView(requestedView));
     }
   }, []);
+
+  const openPatientBooking = (patient: PatientRecord) => {
+    setBookingPatient(patient); setDataError("");
+  };
 
   const toggleSection = (s: NavSection) =>
     setOpenSections((prev) =>
@@ -106,46 +104,6 @@ export default function DoctorDashboard() {
     } catch (error) {
       setDataError(error instanceof Error ? error.message : "Unable to review reschedule request.");
       throw error;
-    }
-  };
-
-  const handleAddConsultation = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const [firstName, ...lastNameParts] = newPatient.trim().split(/\s+/);
-    if (!firstName || !lastNameParts.length) {
-      setDataError("Please enter the patient's first and last name.");
-      return;
-    }
-    setSavingConsultation(true);
-    setDataError("");
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error("Your session expired. Please sign in again.");
-      const response = await fetch("/api/appointments", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
-        body: JSON.stringify({
-          firstName,
-          lastName: lastNameParts.join(" "),
-          email: newEmail,
-          phone: newPhone,
-          serviceSlug: newService,
-          consentAcknowledged: true,
-          appointmentDate: newAppointmentDate,
-          appointmentTime: `${newTime}:00`,
-          notes: newNotes,
-        }),
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Unable to create consultation.");
-      const appointments = await fetchAppointments();
-      setBookings(appointments.map((appointment) => ({ ...appointment, room: "Clinic" })));
-      setShowAddModal(false);
-      setNewPatient(""); setNewEmail(""); setNewPhone(""); setNewNotes("");
-    } catch (error) {
-      setDataError(error instanceof Error ? error.message : "Unable to create consultation.");
-    } finally {
-      setSavingConsultation(false);
     }
   };
 
@@ -186,76 +144,7 @@ export default function DoctorDashboard() {
   return (
     <div className={`dk-root ${mobileNavOpen ? "mobile-nav-open" : ""}`}>
       <button type="button" className="dk-mobile-nav-overlay" aria-label="Close navigation" onClick={() => setMobileNavOpen(false)} />
-      {/* Add Consultation Modal */}
-      {showAddModal && (
-        <div className="dk-modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowAddModal(false)}>
-          <div className="dk-modal-card">
-            <div className="dk-modal-head">
-              <p className="dk-modal-title">
-                <i className="fa-solid fa-calendar-plus" /> New Appointment
-              </p>
-              <button type="button" className="dk-modal-close" onClick={() => setShowAddModal(false)}>
-                <i className="fa-solid fa-xmark" />
-              </button>
-            </div>
-            <form onSubmit={handleAddConsultation}>
-              <div className="dk-modal-body">
-                <div className="dk-modal-field">
-                  <label className="dk-modal-label">Patient Full Name *</label>
-                  <input
-                    className="dk-modal-input"
-                    type="text"
-                    placeholder="e.g. Maria Santos"
-                    value={newPatient}
-                    onChange={(e) => setNewPatient(e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="dk-modal-grid-2">
-                  <div className="dk-modal-field">
-                    <label className="dk-modal-label">Service / Procedure</label>
-                    <select className="dk-modal-select" value={newService} onChange={(e) => setNewService(e.target.value)}>
-                      <option value="consult-dr-kharyl">Consultation with Dr. Kharyl</option>
-                      <option value="botox-forehead">Botox / Neuromodulators</option>
-                      <option value="fillers-lip">Dermal Fillers</option>
-                      <option value="sb-hyaron">Skin Boosters</option>
-                      <option value="laser-co2-fractional">CO2 Fractional Laser</option>
-                    </select>
-                  </div>
-                  <div className="dk-modal-field">
-                    <label className="dk-modal-label">Scheduled Time</label>
-                    <input className="dk-modal-input" type="time" value={newTime} onChange={(e) => setNewTime(e.target.value)} />
-                  </div>
-                </div>
-                <div className="dk-modal-grid-2">
-                  <div className="dk-modal-field">
-                    <label className="dk-modal-label">Appointment Date</label>
-                    <input className="dk-modal-input" type="date" value={newAppointmentDate} onChange={(e) => setNewAppointmentDate(e.target.value)} required />
-                  </div>
-                  <div className="dk-modal-field">
-                    <label className="dk-modal-label">Phone Number *</label>
-                    <input className="dk-modal-input" type="tel" value={newPhone} onChange={(e) => setNewPhone(e.target.value)} required />
-                  </div>
-                </div>
-                <div className="dk-modal-field">
-                  <label className="dk-modal-label">Email Address *</label>
-                  <input className="dk-modal-input" type="email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} required />
-                </div>
-                <div className="dk-modal-field">
-                  <label className="dk-modal-label">Clinical Notes</label>
-                  <textarea className="dk-modal-textarea" placeholder="Procedure notes, allergies, special instructions..." value={newNotes} onChange={(e) => setNewNotes(e.target.value)} />
-                </div>
-                <div className="dk-modal-foot">
-                  <button type="button" className="dk-btn dk-btn-outline" onClick={() => setShowAddModal(false)}>Cancel</button>
-                  <button type="submit" className="dk-btn dk-btn-pink" disabled={savingConsultation}>
-                    <i className="fa-solid fa-calendar-plus" /> {savingConsultation ? "Saving..." : "Add Appointment"}
-                  </button>
-                </div>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {bookingPatient && <StaffAppointmentModal patient={bookingPatient} onClose={() => setBookingPatient(null)} onCreated={async () => { const appointments=await fetchAppointments(); setBookings(appointments.map(appointment=>({...appointment,room:"Clinic"}))); }} />}
 
       {/* SIDEBAR */}
       <aside className="dk-sidebar" onClick={(event) => {
@@ -346,6 +235,7 @@ export default function DoctorDashboard() {
               <i className="fa-solid fa-wand-magic-sparkles" />
               Website Content
             </button>
+            <button type="button" id="nav-blog-builder" className={`dk-nav-item ${view === "blog-builder" ? "active" : ""}`} onClick={() => setView("blog-builder")}><i className="fa-solid fa-newspaper"/> Blog Builder</button>
           </div>
 
           <div className="dk-nav-section">
@@ -398,11 +288,12 @@ export default function DoctorDashboard() {
                 <p className="dk-welcome-title">Good day, {doctorName}</p>
                 <p className="dk-welcome-sub">{todayBookings.length ? `${todayBookings.length} patient${todayBookings.length === 1 ? "" : "s"} scheduled today.` : "No patients scheduled today."} Review the queue and prepare treatment notes before each visit.</p>
               </div>
-              <button type="button" className="dk-cta-btn" onClick={() => setShowAddModal(true)}><i className="fa-solid fa-calendar-plus" /> Add consultation</button>
+              <button type="button" className="dk-cta-btn" onClick={() => setView("emr")}><i className="fa-solid fa-user-check" /> Choose patient to book</button>
             </div>
           )}
           {view === "calendar" && <ClinicCalendar />}
           {view === "website-content" && <WebsiteContentManager />}
+          {view === "blog-builder" && <BlogBuilder />}
           {view === "dashboard" && (
           <div className="dk-stats-grid dk-stats-grid--4col" style={{ marginBottom: "1.5rem" }}>
             {stats.map((s) => (
@@ -436,8 +327,8 @@ export default function DoctorDashboard() {
                   <div className="dk-empty-icon"><i className="fa-regular fa-calendar-xmark" /></div>
                   <h3>No consultations yet today</h3>
                   <p>Add a walk-in or scheduled patient to begin your clinical workflow.</p>
-                  <button type="button" className="dk-cta-btn" style={{ marginTop: "0.5rem" }} onClick={() => setShowAddModal(true)}>
-                    <i className="fa-solid fa-calendar-plus" /> Add Consultation
+                  <button type="button" className="dk-cta-btn" style={{ marginTop: "0.5rem" }} onClick={() => setView("emr")}>
+                    <i className="fa-solid fa-user-check" /> Choose Patient to Book
                   </button>
                 </div>
               ) : (
@@ -515,7 +406,7 @@ export default function DoctorDashboard() {
                   <p className="dk-welcome-title">All bookings, one timeline</p>
                   <p className="dk-welcome-sub">Search, filter, review requests, and manage every The Klinique appointment by date.</p>
                 </div>
-                <div className="ma-hero-actions"><button type="button" className="dk-cta-btn" onClick={() => setShowAddModal(true)}><i className="fa-solid fa-plus" /> New Appointment</button></div>
+                <div className="ma-hero-actions"><button type="button" className="dk-cta-btn" onClick={() => setView("emr")}><i className="fa-solid fa-user-check" /> Choose patient to book</button></div>
               </div>
               <DoctorAppointmentWorkspace appointments={bookings} onStatusChange={handleStatusChange} rescheduleRequests={rescheduleRequests} onReviewReschedule={handleReviewReschedule} onOpenClinicalWorkspace={(appointment) => { setClinicalAppointmentId(appointment.id); setView(appointment.serviceCategory === "consultations" ? "consultations" : "treatments"); }} />
             </>
@@ -551,7 +442,7 @@ export default function DoctorDashboard() {
 
           {/* EMR */}
           {view === "emr" && (
-            <PatientRecordsWorkspace onBookPatient={(patient) => { setNewPatient(patient.fullName); setNewEmail(patient.email); setNewPhone(patient.phone); setShowAddModal(true); }} />
+            <PatientRecordsWorkspace onBookPatient={openPatientBooking} />
           )}
           {view === "consultations" && <ConsultationWorkspace appointments={bookings} initialAppointmentId={clinicalAppointmentId} onOpenRecords={() => setView("emr")} onCompleted={async () => { const appointments = await fetchAppointments(); setBookings(appointments.map((appointment) => ({ ...appointment, room: "Clinic" }))); }} />}
           {view === "treatments" && <TreatmentWorkspace initialAppointmentId={clinicalAppointmentId} onCompleted={async () => { const appointments = await fetchAppointments(); setBookings(appointments.map((appointment) => ({ ...appointment, room: "Clinic" }))); }} />}

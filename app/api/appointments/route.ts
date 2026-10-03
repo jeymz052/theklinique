@@ -7,6 +7,7 @@ import { notifyAppointmentStatusChanged, notifyBookingCreated } from "@/lib/book
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const allowedStatuses = ["pending", "confirmed", "completed", "cancelled", "no_show"] as const;
 type AppointmentStatus = (typeof allowedStatuses)[number];
@@ -130,10 +131,11 @@ export async function POST(request: Request) {
     const body = await request.json();
     const role = await getUserRole(user);
     const staffBooking = isStaffRole(role);
-    const firstName = String(body.firstName || "").trim();
-    const lastName = String(body.lastName || "").trim();
-    const email = String(staffBooking ? body.email : user.email).trim().toLowerCase();
-    const phone = String(body.phone || "").trim();
+    let firstName = String(body.firstName || "").trim();
+    let lastName = String(body.lastName || "").trim();
+    let email = String(staffBooking ? body.email : user.email).trim().toLowerCase();
+    let phone = String(body.phone || "").trim();
+    const clientId = String(body.clientId || "").trim();
     const serviceSlug = String(body.serviceSlug || "").trim();
     const appointmentDate = String(body.appointmentDate || "");
     const appointmentTime = String(body.appointmentTime || "");
@@ -147,7 +149,7 @@ export async function POST(request: Request) {
     const treatmentIds = Array.isArray(body.treatmentIds) ? Array.from(new Set(body.treatmentIds.filter((value: unknown): value is string => typeof value === "string"))) : [];
     const parentAppointmentId = String(body.parentAppointmentId || "").trim() || null;
 
-    if (!firstName || !lastName || !email || !phone || !serviceSlug || !appointmentDate || !appointmentTime || (!staffBooking && !bookingType) || !consentAcknowledged) {
+    if ((!staffBooking && (!firstName || !lastName || !email || !phone)) || (staffBooking && !UUID.test(clientId)) || !serviceSlug || !appointmentDate || !appointmentTime || (!staffBooking && !bookingType) || !consentAcknowledged) {
       return NextResponse.json({ error: "Please complete every required booking field." }, { status: 400 });
     }
     if (!staffBooking && (!isIsoDate(dateOfBirth) || !chiefConcern || !intakeConfirmed)) {
@@ -158,6 +160,18 @@ export async function POST(request: Request) {
     }
 
     const admin = getAdminClient();
+    let existingClient: { id:string; full_name:string; email:string|null; phone:string|null } | null = null;
+    if (staffBooking) {
+      const { data, error } = await admin.from("clients").select("id, full_name, email, phone").eq("id", clientId).maybeSingle();
+      if (error) throw error;
+      if (!data) return NextResponse.json({ error: "Create or select a patient record before booking an appointment." }, { status: 400 });
+      existingClient = data;
+      const nameParts = data.full_name.trim().split(/\s+/);
+      firstName = nameParts.shift() || data.full_name;
+      lastName = nameParts.join(" ") || "Patient";
+      email = (data.email || "").toLowerCase();
+      phone = data.phone || "";
+    }
     const normalizedAppointmentTime = normalizeTime(appointmentTime);
     const dayOfWeek = new Date(`${appointmentDate}T00:00:00Z`).getUTCDay();
     const [{ data: schedule, error: scheduleError }, { data: blockedDate, error: blockedError }, { data: slotAppointments, error: slotError }] = await Promise.all([
@@ -234,7 +248,7 @@ export async function POST(request: Request) {
     }
     const treatmentTotal = Number(service.price) + additionalTreatments.reduce((sum, item) => sum + Number(item.price), 0);
 
-    const { data: client, error: clientError } = await admin
+    const clientResult = staffBooking && existingClient ? { data: existingClient, error: null } : await admin
       .from("clients")
       .upsert({
         full_name: `${firstName} ${lastName}`,
@@ -254,7 +268,8 @@ export async function POST(request: Request) {
       }, { onConflict: "email" })
       .select("id")
       .single();
-    if (clientError || !client) throw clientError || new Error("Unable to save patient details.");
+    const client = clientResult.data;
+    if (clientResult.error || !client) throw clientResult.error || new Error("Unable to save patient details.");
 
     const { data: referenceNo, error: referenceError } = await admin.rpc("generate_appointment_ref");
     if (referenceError || !referenceNo) throw referenceError || new Error("Unable to generate appointment reference.");

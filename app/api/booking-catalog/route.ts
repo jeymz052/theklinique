@@ -11,7 +11,7 @@ export async function GET() {
   try {
     const supabase = createClient(url, serviceRoleKey, { auth: { persistSession: false } });
     const [{ data: categories, error: categoriesError }, { data: services, error: servicesError }, { data: products, error: productsError }] = await Promise.all([
-      supabase.from("service_categories").select("id, name, slug, sort_order").order("sort_order"),
+      supabase.from("service_categories").select("id, name, slug, sort_order, calendar_color").order("sort_order"),
       supabase.from("services").select("id, category_id, subcategory, name, slug, description, price, price_note, duration_mins").eq("is_active", true).order("sort_order"),
       supabase.from("products").select("id, name, description, price, category, subcategory").eq("is_active", true).order("sort_order"),
     ]);

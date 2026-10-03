@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -12,6 +12,9 @@ import DashboardInsights from "@/app/components/DashboardInsights";
 import BasicSettingsWorkspace from "@/app/components/BasicSettingsWorkspace";
 import ClinicCalendar from "@/app/components/ClinicCalendar";
 import WebsiteContentManager from "@/app/components/WebsiteContentManager";
+import PatientRecordsWorkspace from "@/app/components/PatientRecordsWorkspace";
+import StaffAppointmentModal from "@/app/components/StaffAppointmentModal";
+import type { PatientRecord } from "@/lib/patients";
 
 type SecretaryView = "overview" | "schedule" | "calendar" | "patients" | "website-content" | "profile" | "settings";
 
@@ -25,6 +28,7 @@ export default function SecretaryDashboard() {
   const [status, setStatus] = useState("all");
   const [dataError, setDataError] = useState("");
   const [signingOut, setSigningOut] = useState(false);
+  const [bookingPatient, setBookingPatient] = useState<PatientRecord | null>(null);
 
   useEffect(() => {
     if (!authLoading) fetchAppointments().then(setAppointments).catch((error) => setDataError(error.message));
@@ -41,14 +45,7 @@ export default function SecretaryDashboard() {
   const todayKey = new Date().toISOString().slice(0, 10);
   const today = appointments.filter((appointment) => appointment.date === todayKey && appointment.status !== "cancelled");
   const pending = appointments.filter((appointment) => appointment.status === "pending");
-  const patients = useMemo(() => Array.from(appointments.reduce((map, appointment) => {
-    const current = map.get(appointment.email) || { name: appointment.patient, email: appointment.email, phone: appointment.phone, visits: 0, nextVisit: "" };
-    current.visits += 1;
-    if (appointment.date >= todayKey && (!current.nextVisit || appointment.date < current.nextVisit)) current.nextVisit = appointment.date;
-    map.set(appointment.email, current);
-    return map;
-  }, new Map<string, { name: string; email: string; phone: string; visits: number; nextVisit: string }>()).values()), [appointments, todayKey]);
-
+  const patientCount = new Set(appointments.map((appointment) => appointment.email || appointment.patient)).size;
   const filtered = appointments.filter((appointment) => {
     const needle = query.trim().toLowerCase();
     return (status === "all" || appointment.status === status) && (!needle || [appointment.patient, appointment.referenceNo, appointment.service, appointment.phone].some((value) => value.toLowerCase().includes(needle)));
@@ -74,6 +71,7 @@ export default function SecretaryDashboard() {
 
   return (
     <div className={`dk-root ${mobileNavOpen ? "mobile-nav-open" : ""}`}>
+      {bookingPatient&&<StaffAppointmentModal patient={bookingPatient} onClose={()=>setBookingPatient(null)} onCreated={async()=>setAppointments(await fetchAppointments())}/>} 
       <button type="button" className="dk-mobile-nav-overlay" aria-label="Close navigation" onClick={() => setMobileNavOpen(false)} />
       <aside className="dk-sidebar">
         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -125,7 +123,7 @@ export default function SecretaryDashboard() {
             <div className="dk-kpi-grid">
               <div className="dk-kpi-card"><div className="dk-kpi-top"><span className="dk-kpi-icon dk-kpi-icon-pink"><i className="fa-solid fa-calendar-day" /></span><span className="dk-kpi-trend label">Today</span></div><p className="dk-kpi-value">{today.length}</p><p className="dk-kpi-label">Scheduled visits</p></div>
               <div className="dk-kpi-card"><div className="dk-kpi-top"><span className="dk-kpi-icon dk-kpi-icon-amber"><i className="fa-solid fa-hourglass-half" /></span><span className="dk-kpi-trend warn">Action needed</span></div><p className="dk-kpi-value">{pending.length}</p><p className="dk-kpi-label">Pending confirmation</p></div>
-              <div className="dk-kpi-card"><div className="dk-kpi-top"><span className="dk-kpi-icon dk-kpi-icon-green"><i className="fa-solid fa-users" /></span><span className="dk-kpi-trend label">Directory</span></div><p className="dk-kpi-value">{patients.length}</p><p className="dk-kpi-label">Patients</p></div>
+              <div className="dk-kpi-card"><div className="dk-kpi-top"><span className="dk-kpi-icon dk-kpi-icon-green"><i className="fa-solid fa-users" /></span><span className="dk-kpi-trend label">Directory</span></div><p className="dk-kpi-value">{patientCount}</p><p className="dk-kpi-label">Patients with appointments</p></div>
               <div className="dk-kpi-card"><div className="dk-kpi-top"><span className="dk-kpi-icon dk-kpi-icon-black"><i className="fa-solid fa-phone" /></span><span className="dk-kpi-trend label">Queue</span></div><p className="dk-kpi-value">{pending.length}</p><p className="dk-kpi-label">Follow-ups due</p></div>
             </div>
             <div className="dk-quick-grid" style={{ marginBottom: "1.5rem" }}>
@@ -147,7 +145,7 @@ export default function SecretaryDashboard() {
           {view === "calendar" && <ClinicCalendar />}
           {view === "website-content" && <WebsiteContentManager />}
 
-          {view === "patients" && <div className="dk-panel"><div className="dk-panel-hdr"><div className="dk-panel-title-wrap"><i className="fa-solid fa-address-book" /><div><p className="dk-panel-title">Patient directory</p><p className="dk-panel-sub">Contact and visit coordination details</p></div></div></div><div className="dk-table-wrap"><table className="dk-table"><thead><tr><th>Patient</th><th>Contact</th><th>Visits</th><th>Next visit</th></tr></thead><tbody>{patients.map((patient) => <tr key={patient.email}><td><p className="dk-cell-primary">{patient.name}</p><p className="dk-cell-secondary">{patient.email}</p></td><td>{patient.phone || "Not provided"}</td><td>{patient.visits}</td><td>{patient.nextVisit || "None scheduled"}</td></tr>)}</tbody></table></div></div>}
+          {view === "patients" && <PatientRecordsWorkspace onBookPatient={setBookingPatient}/>} 
           {(view === "settings" || view === "profile") && <BasicSettingsWorkspace key={view} email={user?.email} initialTab={view === "profile" ? "profile" : "general"} />}
         </div>
       </main>

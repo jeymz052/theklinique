@@ -8,6 +8,7 @@ import BookingForm from "@/app/components/BookingForm";
 import LandingContactForm from "@/app/components/LandingContactForm";
 import type { LandingContent, LandingMedia } from "@/app/components/WebsiteContentManager";
 import { FEATURED_FACEBOOK_REEL, normalizeFacebookPostUrl } from "@/lib/landing-social";
+import type { BlogPost } from "@/lib/blog";
 
 type LandingPackage = { id: string; name: string; description: string | null; price: number; category: string };
 
@@ -43,13 +44,27 @@ const FAQS = [
 
 export default function Home() {
   const [bookingOpen, setBookingOpen] = useState(false);
+  const [bookingCategoryHint, setBookingCategoryHint] = useState<string | null>(null);
+  const [bookingServiceSlug, setBookingServiceSlug] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [compactViewport, setCompactViewport] = useState(false);
   const [landingPackages, setLandingPackages] = useState<LandingPackage[]>([]);
   const [content, setContent] = useState<LandingContent | null>(null);
+  const [blogPosts, setBlogPosts] = useState<BlogPost[]>([]);
   const [heroSlide, setHeroSlide] = useState(0);
   const heroMedia = content?.heroMedia || [];
   const activeHeroSlide = heroMedia.length ? heroSlide % heroMedia.length : 0;
+  const openBooking = (categoryHint: string | null = null) => {
+    setBookingServiceSlug(null);
+    setBookingCategoryHint(categoryHint);
+    setBookingOpen(true);
+  };
+
+  useEffect(() => {
+    const query=new URLSearchParams(window.location.search),service=query.get("treatment"),shouldOpen=query.get("book")==="1";
+    if(shouldOpen)queueMicrotask(()=>{setBookingServiceSlug(service);setBookingCategoryHint(query.get("category"));setBookingOpen(true);});
+    void fetch("/api/blog-posts").then(response=>response.ok?response.json():{posts:[]}).then(result=>setBlogPosts(result.posts||[]));
+  }, []);
 
   useEffect(() => {
     const updateViewport = () => {
@@ -138,10 +153,10 @@ export default function Home() {
           role="dialog"
           aria-modal="true"
           aria-label="Book an Appointment"
-          onClick={(e) => e.target === e.currentTarget && setBookingOpen(false)}
+          onClick={(e) => { if (e.target === e.currentTarget) { setBookingOpen(false); setBookingCategoryHint(null); } }}
         >
           <div className="bk-modal-sheet">
-            <BookingForm isModal onClose={() => setBookingOpen(false)} />
+            <BookingForm key={bookingServiceSlug || bookingCategoryHint || "all-services"} isModal initialServiceSlug={bookingServiceSlug} initialCategoryHint={bookingCategoryHint} onClose={() => { setBookingOpen(false); setBookingCategoryHint(null); setBookingServiceSlug(null); }} />
           </div>
         </div>
       )}
@@ -159,12 +174,10 @@ export default function Home() {
 
           <ul className={`nav-links ${menuOpen ? "is-open" : ""}`}>
             <li><a href="#home" className="active" onClick={() => setMenuOpen(false)}>Home</a></li>
-            <li><a href="#about" onClick={() => setMenuOpen(false)}>About</a></li>
             <li><a href="#services" onClick={() => setMenuOpen(false)}>Services</a></li>
+            <li><a href="#about" onClick={() => setMenuOpen(false)}>About</a></li>
             <li><a href="#gallery" onClick={() => setMenuOpen(false)}>Gallery</a></li>
-            <li><a href="#socials" onClick={() => setMenuOpen(false)}>Socials</a></li>
-            <li><a href="#faq" onClick={() => setMenuOpen(false)}>FAQ</a></li>
-            <li><a href="#contact" onClick={() => setMenuOpen(false)}>Contact</a></li>
+            <li className="nav-more"><details><summary>More <i className="fa-solid fa-chevron-down"/></summary><div className="nav-more-menu"><a href="#blog" onClick={() => setMenuOpen(false)}><i className="fa-regular fa-newspaper"/> Blogs</a><a href="#socials" onClick={() => setMenuOpen(false)}><i className="fa-regular fa-heart"/> Socials</a><a href="#faq" onClick={() => setMenuOpen(false)}><i className="fa-regular fa-circle-question"/> FAQ</a><a href="#contact" onClick={() => setMenuOpen(false)}><i className="fa-regular fa-envelope"/> Contact</a></div></details></li>
           </ul>
         </div>
 
@@ -183,7 +196,7 @@ export default function Home() {
             type="button"
             className="btn-book"
             id="nav-book-btn"
-            onClick={() => setBookingOpen(true)}
+            onClick={() => openBooking()}
           >
             <i className="fa-solid fa-calendar-plus" style={{ marginRight: "0.4rem" }} />
             <span className="nav-action-label">Book Now</span>
@@ -220,7 +233,7 @@ export default function Home() {
             type="button"
             className="btn-primary"
             id="hero-book-btn"
-            onClick={() => setBookingOpen(true)}
+            onClick={() => openBooking()}
           >
             <i className="fa-solid fa-calendar-plus" />
             Book Your Consultation
@@ -235,19 +248,19 @@ export default function Home() {
       <section className="services-bar">
         <div className="services-bar-inner">
           {[
-            { src: "/images/botox-removebg-preview.png",          alt: "Botox",          name: "Botox &\nNeuromodulators" },
-            { src: "/images/fillers-removebg-preview.png",        alt: "Fillers",        name: "Fillers" },
-            { src: "/images/skinboosters-removebg-preview.png",   alt: "Skin Boosters",  name: "Skin Boosters" },
-            { src: "/images/lasers-removebg-preview.png",         alt: "Lasers",         name: "Lasers &\nSkin Rejuvenation" },
-            { src: "/images/facialandskin-removebg-preview.png",  alt: "Facial & Skin",  name: "Facial & Skin\nTreatments" },
-            { src: "/images/IV_teraphy-removebg-preview.png",     alt: "IV Therapy",     name: "IV Therapy\n& Wellness" },
-            { src: "/images/otherservices-removebg-preview.png",  alt: "Other Services", name: "Other\nServices" },
+            { src: "/images/botox-removebg-preview.png",          alt: "Botox",          name: "Botox &\nNeuromodulators", category: "Botox & Neuromodulators" },
+            { src: "/images/fillers-removebg-preview.png",        alt: "Fillers",        name: "Fillers", category: "Fillers" },
+            { src: "/images/skinboosters-removebg-preview.png",   alt: "Skin Boosters",  name: "Skin Boosters", category: "Skin Boosters" },
+            { src: "/images/lasers-removebg-preview.png",         alt: "Lasers",         name: "Lasers &\nSkin Rejuvenation", category: "Laser Treatments" },
+            { src: "/images/facialandskin-removebg-preview.png",  alt: "Facial & Skin",  name: "Facial & Skin\nTreatments", category: "Facial & Skin Treatments" },
+            { src: "/images/IV_teraphy-removebg-preview.png",     alt: "IV Therapy",     name: "IV Therapy\n& Wellness", category: "IV Therapy & Wellness" },
+            { src: "/images/otherservices-removebg-preview.png",  alt: "Other Services", name: "Other\nServices", category: null },
           ].map((s) => (
             <button
               key={s.alt}
               type="button"
               className="service-icon-item"
-              onClick={() => setBookingOpen(true)}
+              onClick={() => openBooking(s.category)}
               style={{ cursor: "pointer", background: "none", border: "none", padding: 0 }}
             >
               <div className="service-icon-circle">
@@ -306,7 +319,7 @@ export default function Home() {
             type="button"
             className="btn-outline"
             id="about-book-btn"
-            onClick={() => setBookingOpen(true)}
+            onClick={() => openBooking()}
           >
             <i className="fa-solid fa-calendar-plus" />
             Book a Consultation
@@ -324,7 +337,7 @@ export default function Home() {
       <section className="services-section" id="services">
         <div className="section-header">
           <div className="section-header-left"><p className="section-label">{content?.servicesEyebrow || "Our Signature Services"}</p><h2>{content?.servicesTitle || "What We Do Best"}</h2></div>
-          <button type="button" className="view-all" id="view-all-services-btn" onClick={() => setBookingOpen(true)}>Book a Service →</button>
+          <button type="button" className="view-all" id="view-all-services-btn" onClick={() => openBooking()}>Book a Service →</button>
         </div>
         <div className="services-grid">
           {(content?.serviceShowcase?.length ? content.serviceShowcase : [
@@ -332,7 +345,7 @@ export default function Home() {
             { image: "/images/fillers.png", alt: "Dermal fillers", name: "Fillers", tagline: "Enhance Your Natural Beauty." },
             { image: "/images/skin boosters.png", alt: "Skin boosters", name: "Skin Boosters", tagline: "Deep Hydration. Lasting Glow." },
             { image: "/images/lasers.png", alt: "Laser skin treatments", name: "Lasers", tagline: "Clearer Skin. Brighter You." },
-          ]).map((service,index) => <div key={`${service.name}-${index}`} className="service-card">{service.image?<img className="service-card-img" src={service.image} alt={service.alt||service.name} style={{width:"100%",height:"auto",aspectRatio:"3/4",objectFit:"cover"}}/>:<div className="service-card-img service-card-placeholder"><i className="fa-solid fa-spa"/></div>}<div className="service-card-overlay"/><div className="service-card-content"><p className="service-card-name">{service.name}</p><p className="service-card-tagline">{service.tagline}</p><button type="button" className="service-card-btn" onClick={()=>setBookingOpen(true)} aria-label={`Book ${service.name}`}>→</button></div></div>)}
+          ]).map((service,index) => { const article=blogPosts.find(post=>`${post.title} ${post.category}`.toLowerCase().includes(service.name.toLowerCase()));const destination=article?`/blog/${article.slug}`:`/blog?service=${encodeURIComponent(service.name)}`;return <a key={`${service.name}-${index}`} className="service-card" href={destination} target="_blank" rel="noopener noreferrer">{service.image?<img className="service-card-img" src={service.image} alt={service.alt||service.name} style={{width:"100%",height:"auto",aspectRatio:"3/4",objectFit:"cover"}}/>:<div className="service-card-img service-card-placeholder"><i className="fa-solid fa-spa"/></div>}<div className="service-card-overlay"/><div className="service-card-content"><p className="service-card-name">{service.name}</p><p className="service-card-tagline">{service.tagline}</p><span className="service-card-btn" aria-label={`Learn about ${service.name}`}>→</span></div></a>})}
         </div>
         <div className="landing-packages-block"><div className="landing-packages-copy"><p className="section-label">Clinic Packages</p><h3>Plans for consistent care</h3><p>Ask the clinic about package eligibility, inclusions, and scheduling.</p><button type="button" onClick={() => setBookingOpen(true)}>Book with a package <i className="fa-solid fa-arrow-right" /></button></div><div className="landing-package-list">{(landingPackages.length ? landingPackages.slice(0, 6) : [{ id: "underarms", name: "Underarms", description: "Unlimited diode laser hair removal for one year.", price: 12000, category: "Laser Hair Removal" }, { id: "lip", name: "Upper / Lower Lip", description: "Unlimited diode laser hair removal for one year.", price: 10000, category: "Laser Hair Removal" }, { id: "bikini", name: "Bikini Lines", description: "Unlimited diode laser hair removal for one year.", price: 12000, category: "Laser Hair Removal" }]).map((item) => <article key={item.id}><span><i className="fa-solid fa-box-open" /></span><div><small>{item.category}</small><h4>{item.name}</h4><p>{item.description}</p></div><strong>PHP {Number(item.price).toLocaleString()}</strong></article>)}</div></div>
       </section>
@@ -343,8 +356,11 @@ export default function Home() {
       {/* ── GALLERY ── */}
       <section className="quote-banner" id={(content?.galleryMedia?.length || 0) ? "gallery-message" : "gallery"} style={{ backgroundImage: "url('/images/banner background.png')", backgroundSize: "cover", backgroundPosition: "center" }}>
         <div className="quote-banner-text-group"><p className="quote-text landing-script-accent">&ldquo;{content?.quoteText || "Healthy skin is a form of self-care."}&rdquo;</p><p className="quote-sub">{content?.quoteSubtitle || "Confidence · Wellness · A Brighter You"}</p></div>
-        <button type="button" className="btn-book quote-book-btn" id="quote-book-btn" onClick={() => setBookingOpen(true)}><i className="fa-solid fa-calendar-plus" /> Book Now</button>
+        <button type="button" className="btn-book quote-book-btn" id="quote-book-btn" onClick={() => openBooking()}><i className="fa-solid fa-calendar-plus" /> Book Now</button>
       </section>
+
+      {/* ── BLOGS ── */}
+      <section className="landing-blog" id="blog"><header><div><p className="section-label">The Klinique Blog</p><h2>Learn with Dr. Kharyl</h2><span>Procedure guides, what to expect, aftercare, and clinic stories.</span></div><Link href="/blog">View all blogs <i className="fa-solid fa-arrow-right"/></Link></header>{blogPosts.length>0?<div>{blogPosts.slice(0,3).map(post=><Link href={`/blog/${post.slug}`} key={post.id}>{post.hero_url?(post.hero_type==="video"?<video src={post.hero_url} muted/>:<img src={post.hero_url} alt={post.title}/>):<span className="landing-blog-placeholder"><i className="fa-solid fa-newspaper"/></span>}<small>{post.category}</small><h3>{post.title}</h3><p>{post.excerpt}</p><strong>Read blog <i className="fa-solid fa-arrow-right"/></strong></Link>)}</div>:<div className="landing-blog-empty"><i className="fa-regular fa-newspaper"/><p>Published blogs will appear here.</p></div>}</section>
 
       {/* ── LATEST SOCIAL POSTS ── */}
       <section className="landing-social-feature" id="socials">
@@ -410,7 +426,7 @@ export default function Home() {
         <div className="footer-inner">
           <div className="footer-logo"><Image src="/images/the_klinique_logo-removebg-preview.png" alt="The Klinique" width={220} height={110} style={{ height: "110px", width: "auto" }} /></div>
           <div className="footer-divider" aria-hidden="true" />
-          <nav className="footer-nav" aria-label="Footer navigation"><a href="#home">Home</a><span className="footer-nav-sep">|</span><a href="#about">About</a><span className="footer-nav-sep">|</span><a href="#services">Services</a><span className="footer-nav-sep">|</span><a href="#gallery">Gallery</a><span className="footer-nav-sep">|</span><a href="#socials">Socials</a><span className="footer-nav-sep">|</span><a href="#faq">FAQ</a><span className="footer-nav-sep">|</span><a href="#contact">Contact</a></nav>
+          <nav className="footer-nav" aria-label="Footer navigation"><a href="#home">Home</a><span className="footer-nav-sep">|</span><a href="#about">About</a><span className="footer-nav-sep">|</span><a href="#services">Services</a><span className="footer-nav-sep">|</span><a href="#gallery">Gallery</a><span className="footer-nav-sep">|</span><a href="#blog">Blogs</a><span className="footer-nav-sep">|</span><a href="#socials">Socials</a><span className="footer-nav-sep">|</span><a href="#faq">FAQ</a><span className="footer-nav-sep">|</span><a href="#contact">Contact</a></nav>
           <div className="footer-divider" aria-hidden="true" />
           <div className="footer-newsletter"><p className="footer-newsletter-label">Be part of our community</p><form className="newsletter-form" id="newsletter-form" onSubmit={(event) => event.preventDefault()}><input type="email" placeholder="Your email address" aria-label="Email address for newsletter" id="newsletter-email" /><button type="submit" aria-label="Subscribe">→</button></form><p className="footer-script-tagline landing-script-accent">{content?.footerTagline || "Your unique beauty in mind."}</p></div>
         </div>

@@ -2,6 +2,25 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.APP_URL || "http://localhost:3000"),
+  icons: {
+    icon: [{ url: "/icon.png", type: "image/png", sizes: "500x500" }],
+    apple: [{ url: "/icon.png", type: "image/png", sizes: "500x500" }],
+  },
+  openGraph: {
+    type: "website",
+    siteName: "The Klinique",
+    title: "The Klinique by Dr. Kharyl",
+    description: "Doctor-led medical aesthetic care in Cagayan de Oro City.",
+    url: "/",
+    images: [{ url: "/opengraph-image", width: 1200, height: 630, alt: "The Klinique by Dr. Kharyl" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "The Klinique by Dr. Kharyl",
+    description: "Doctor-led medical aesthetic care in Cagayan de Oro City.",
+    images: ["/opengraph-image"],
+  },
   title: "The Klinique | Medical Aesthetic Clinic — Cagayan de Oro City",
   description:
     "The Klinique by Dr. Kharyl — Expert medical aesthetic care in Cagayan de Oro City. Botox, fillers, skin boosters, lasers, and more. Book your consultation today.",

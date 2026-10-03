@@ -147,13 +147,14 @@ interface BookingFormProps {
   embedded?: boolean;
   onClose?: () => void;
   initialServiceSlug?: string | null;
+  initialCategoryHint?: string | null;
   parentAppointmentId?: string | null;
 }
 
 /* ═══════════════════════════════════════════════════════════
    BookingForm
 ═══════════════════════════════════════════════════════════ */
-export default function BookingForm({ isModal = false, embedded = false, onClose, initialServiceSlug = null, parentAppointmentId = null }: BookingFormProps) {
+export default function BookingForm({ isModal = false, embedded = false, onClose, initialServiceSlug = null, initialCategoryHint = null, parentAppointmentId = null }: BookingFormProps) {
   const router = useRouter();
   const today = new Date();
 
@@ -225,6 +226,24 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
             setCartTreatmentIds([]);
             setCartProductIds([]);
           }
+        } else if (initialCategoryHint) {
+          const hint = initialCategoryHint.toLowerCase();
+          const aliases = hint.includes("botox") || hint.includes("neuro") ? ["botox", "neurotoxin"]
+            : hint.includes("filler") ? ["filler"]
+            : hint.includes("skin booster") ? ["skin booster"]
+            : hint.includes("laser") ? ["laser"]
+            : hint.includes("facial") || hint.includes("skin treatment") ? ["facial", "skin treatment"]
+            : hint.includes("iv") || hint.includes("wellness") ? ["iv", "wellness"]
+            : [hint];
+          const initialCategory = (result.categories as Category[]).find((item) => {
+            const searchable = `${item.name} ${item.slug}`.toLowerCase().replaceAll("-", " ");
+            return aliases.some((alias) => searchable.includes(alias));
+          });
+          setBookingType("treatment");
+          setSelectedCategory(initialCategory?.id || null);
+          setSelectedService(null);
+          setCartTreatmentIds([]);
+          setCartProductIds([]);
         }
       })
       .catch((error) => {
@@ -233,7 +252,7 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
         setProducts(FALLBACK_CATALOG.products);
         setCatalogError(error instanceof Error ? error.message : "Showing a limited treatment list.");
       });
-  }, [initialServiceSlug]);
+  }, [initialCategoryHint, initialServiceSlug]);
 
   useEffect(() => {
     let active = true;

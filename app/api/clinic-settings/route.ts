@@ -37,41 +37,21 @@ function slugify(value: string) {
   return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 }
 
-async function resolveServiceCategory(db: ReturnType<typeof adminClient>, categoryId: string, categoryName: string) {
-  if (UUID.test(categoryId)) {
-    const { data } = await db.from("service_categories").select("id, name, slug, sort_order").eq("id", categoryId).maybeSingle();
-    if (data) return data;
-  }
-
-  const name = categoryName.trim();
-  const slug = slugify(name);
-  if (!name || !slug) return null;
-
-  const { data: existing } = await db.from("service_categories").select("id, name, slug, sort_order").eq("slug", slug).maybeSingle();
-  if (existing) return existing;
-
-  const { data: last } = await db.from("service_categories").select("sort_order").order("sort_order", { ascending: false }).limit(1).maybeSingle();
-  const { data: created, error } = await db.from("service_categories").insert({ name, slug, sort_order: Number(last?.sort_order || 0) + 1 }).select("id, name, slug, sort_order").single();
-  if (!error) return created;
-  if (error.code === "23505") {
-    const { data: concurrent } = await db.from("service_categories").select("id, name, slug, sort_order").eq("slug", slug).maybeSingle();
-    if (concurrent) return concurrent;
-  }
-  throw error;
-}
-
 export async function GET(request: Request) {
   if (!await authorize(request)) return NextResponse.json({ error: "Doctor or superadmin access is required." }, { status: 403 });
   try {
     const db = adminClient();
-    const [{ data: settings, error: settingsError }, { data: categories, error: categoryError }, { data: services, error: servicesError }, { data: products, error: productsError }] = await Promise.all([
+    const [{ data: settings, error: settingsError }, { data: categories, error: categoryError }, { data: serviceSubcategories, error: serviceSubcategoryError }, { data: packageCategories, error: packageCategoryError }, { data: packageSubcategories, error: packageSubcategoryError }, { data: services, error: servicesError }, { data: products, error: productsError }] = await Promise.all([
       db.from("clinic_settings").select("*").eq("id", 1).single(),
-      db.from("service_categories").select("id, name, slug, sort_order").order("sort_order"),
+      db.from("service_categories").select("id, name, slug, sort_order, calendar_color").order("sort_order"),
+      db.from("service_subcategories").select("id, category_id, name, slug, sort_order").order("sort_order"),
+      db.from("package_categories").select("id, name, slug, sort_order").order("sort_order"),
+      db.from("package_subcategories").select("id, category_id, name, slug, sort_order").order("sort_order"),
       db.from("services").select("id, category_id, subcategory, name, slug, description, price, price_note, duration_mins, is_active, sort_order").eq("is_active", true).order("sort_order"),
       db.from("products").select("id, category, subcategory, name, description, price, is_active, sort_order").eq("is_active", true).order("sort_order"),
     ]);
-    if (settingsError || categoryError || servicesError || productsError) throw settingsError || categoryError || servicesError || productsError;
-    return NextResponse.json({ settings, categories: categories || [], services: services || [], products: products || [] });
+    if (settingsError || categoryError || serviceSubcategoryError || packageCategoryError || packageSubcategoryError || servicesError || productsError) throw settingsError || categoryError || serviceSubcategoryError || packageCategoryError || packageSubcategoryError || servicesError || productsError;
+    return NextResponse.json({ settings, categories: categories || [], serviceSubcategories: serviceSubcategories || [], packageCategories: packageCategories || [], packageSubcategories: packageSubcategories || [], services: services || [], products: products || [] });
   } catch (error) {
     console.error("Unable to load clinic settings:", error);
     return NextResponse.json({ error: "Unable to load clinic settings. Apply the latest database migration first." }, { status: 500 });
@@ -87,21 +67,24 @@ export async function POST(request: Request) {
     const price = Number(body.price);
     if (!name || !Number.isFinite(price) || price < 0) return NextResponse.json({ error: "Enter a name and a non-negative price." }, { status: 400 });
     if (body.type === "service") {
-      const category = await resolveServiceCategory(db, String(body.categoryId || ""), String(body.categoryName || ""));
+      const categoryId = String(body.categoryId || "");
+      const subcategoryId = String(body.subcategoryId || "");
+      const { data: subcategory } = UUID.test(subcategoryId) ? await db.from("service_subcategories").select("id, category_id, name").eq("id", subcategoryId).eq("category_id", categoryId).maybeSingle() : { data: null };
       const duration = Number(body.durationMins);
-      const subcategory = String(body.subcategory || "").trim();
       const slug = slugify(String(body.slug || name));
-      if (!category || !subcategory || !slug || !Number.isInteger(duration) || duration < 5 || duration > 480) return NextResponse.json({ error: "Choose or enter a category and subcategory, then enter a duration between 5 and 480 minutes." }, { status: 400 });
-      const { data, error } = await db.from("services").insert({ category_id: category.id, subcategory, name, slug, description: String(body.description || "").trim() || null, price, duration_mins: duration, is_active: true }).select("id, category_id, subcategory, name, slug, description, price, price_note, duration_mins, is_active, sort_order").single();
+      if (!UUID.test(categoryId) || !subcategory || !slug || !Number.isInteger(duration) || duration < 5 || duration > 480) return NextResponse.json({ error: "Choose a category and subcategory, then enter a duration between 5 and 480 minutes." }, { status: 400 });
+      const { data, error } = await db.from("services").insert({ category_id: categoryId, subcategory: subcategory.name, name, slug, description: String(body.description || "").trim() || null, price, duration_mins: duration, is_active: true }).select("id, category_id, subcategory, name, slug, description, price, price_note, duration_mins, is_active, sort_order").single();
       if (error?.code === "23505") return NextResponse.json({ error: "A service with this name or slug already exists." }, { status: 409 });
       if (error) throw error;
-      return NextResponse.json({ service: data, category }, { status: 201 });
+      return NextResponse.json({ service: data }, { status: 201 });
     }
     if (body.type === "product") {
-      const category = String(body.category || "Clinic Package").trim();
-      const subcategory = String(body.subcategory || "").trim();
-      if (!subcategory) return NextResponse.json({ error: "Choose a package subcategory." }, { status: 400 });
-      const { data, error } = await db.from("products").insert({ category, subcategory, name, description: String(body.description || "").trim() || null, price, is_active: true }).select("id, category, subcategory, name, description, price, is_active, sort_order").single();
+      const categoryId = String(body.categoryId || "");
+      const subcategoryId = String(body.subcategoryId || "");
+      const { data: category } = UUID.test(categoryId) ? await db.from("package_categories").select("id, name").eq("id", categoryId).maybeSingle() : { data: null };
+      const { data: subcategory } = UUID.test(subcategoryId) ? await db.from("package_subcategories").select("id, category_id, name").eq("id", subcategoryId).eq("category_id", categoryId).maybeSingle() : { data: null };
+      if (!category || !subcategory) return NextResponse.json({ error: "Choose a package category and subcategory." }, { status: 400 });
+      const { data, error } = await db.from("products").insert({ category: category.name, subcategory: subcategory.name, name, description: String(body.description || "").trim() || null, price, is_active: true }).select("id, category, subcategory, name, description, price, is_active, sort_order").single();
       if (error) throw error;
       return NextResponse.json({ product: data }, { status: 201 });
     }
@@ -149,24 +132,27 @@ export async function PATCH(request: Request) {
       const id = String(body.id || "");
       const price = Number(body.price);
       const name = String(body.name || "").trim();
-      const category = await resolveServiceCategory(db, String(body.categoryId || ""), String(body.categoryName || ""));
-      const subcategory = String(body.subcategory || "").trim();
+      const categoryId = String(body.categoryId || "");
+      const subcategoryId = String(body.subcategoryId || "");
+      const { data: subcategory } = UUID.test(subcategoryId) ? await db.from("service_subcategories").select("id, category_id, name").eq("id", subcategoryId).eq("category_id", categoryId).maybeSingle() : { data: null };
       const duration = Number(body.durationMins);
-      if (!UUID.test(id) || !category || !subcategory || !name || !Number.isFinite(price) || price < 0 || !Number.isInteger(duration) || duration < 5 || duration > 480) return NextResponse.json({ error: "Enter valid category, subcategory, service details, price, and duration." }, { status: 400 });
-      const update: Record<string, unknown> = { name, category_id: category.id, subcategory, description: String(body.description || "").trim() || null, price, duration_mins: duration };
+      if (!UUID.test(id) || !UUID.test(categoryId) || !subcategory || !name || !Number.isFinite(price) || price < 0 || !Number.isInteger(duration) || duration < 5 || duration > 480) return NextResponse.json({ error: "Enter valid category, subcategory, service details, price, and duration." }, { status: 400 });
+      const update: Record<string, unknown> = { name, category_id: categoryId, subcategory: subcategory.name, description: String(body.description || "").trim() || null, price, duration_mins: duration };
       if (typeof body.isActive === "boolean") update.is_active = body.isActive;
       const { data, error } = await db.from("services").update(update).eq("id", id).select("id, category_id, subcategory, name, slug, description, price, price_note, duration_mins, is_active").single();
       if (error) throw error;
-      return NextResponse.json({ service: data, category });
+      return NextResponse.json({ service: data });
     }
     if (body.type === "product") {
       const id = String(body.id || "");
       const price = Number(body.price);
       const name = String(body.name || "").trim();
-      const category = String(body.category || "").trim();
-      const subcategory = String(body.subcategory || "").trim();
+      const categoryId = String(body.categoryId || "");
+      const subcategoryId = String(body.subcategoryId || "");
+      const { data: category } = UUID.test(categoryId) ? await db.from("package_categories").select("id, name").eq("id", categoryId).maybeSingle() : { data: null };
+      const { data: subcategory } = UUID.test(subcategoryId) ? await db.from("package_subcategories").select("id, category_id, name").eq("id", subcategoryId).eq("category_id", categoryId).maybeSingle() : { data: null };
       if (!UUID.test(id) || !name || !category || !subcategory || !Number.isFinite(price) || price < 0) return NextResponse.json({ error: "Enter a valid package name, category, subcategory, and non-negative price." }, { status: 400 });
-      const update: Record<string, unknown> = { name, category, subcategory, description: String(body.description || "").trim() || null, price };
+      const update: Record<string, unknown> = { name, category: category.name, subcategory: subcategory.name, description: String(body.description || "").trim() || null, price };
       if (typeof body.isActive === "boolean") update.is_active = body.isActive;
       const { data, error } = await db.from("products").update(update).eq("id", id).select("id, category, subcategory, name, description, price, is_active").single();
       if (error) throw error;

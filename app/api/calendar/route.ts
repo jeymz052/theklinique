@@ -27,7 +27,7 @@ export async function GET(request: Request) {
     const db = admin();
     const [{ data: profile }, { data: appointments, error: appointmentError }, { data: blocks, error: blockError }] = await Promise.all([
       db.from("profiles").select("role").eq("id", authData.user.id).maybeSingle(),
-      db.from("appointments").select("id, reference_no, appointment_date, appointment_time, status, clients(full_name, email), services(name)").gte("appointment_date", start).lte("appointment_date", end).neq("status", "cancelled").order("appointment_date").order("appointment_time"),
+      db.from("appointments").select("id, reference_no, appointment_date, appointment_time, status, clients(full_name, email), services(name, service_categories(name, calendar_color))").gte("appointment_date", start).lte("appointment_date", end).neq("status", "cancelled").order("appointment_date").order("appointment_time"),
       db.from("blocked_dates").select("id, blocked_date, reason").gte("blocked_date", start).lte("blocked_date", end).order("blocked_date"),
     ]);
     if (appointmentError || blockError) throw appointmentError || blockError;
@@ -36,9 +36,10 @@ export async function GET(request: Request) {
     const first = <T,>(value: T | T[] | null) => Array.isArray(value) ? value[0] : value;
     const events = (appointments || []).map((row) => {
       const client = first(row.clients as { full_name: string; email: string | null } | { full_name: string; email: string | null }[] | null);
-      const service = first(row.services as { name: string } | { name: string }[] | null);
+      const service = first(row.services as { name: string; service_categories:{name:string;calendar_color:string}|{name:string;calendar_color:string}[]|null } | { name: string; service_categories:{name:string;calendar_color:string}|{name:string;calendar_color:string}[]|null }[] | null);
+      const category = first(service?.service_categories || null);
       const own = Boolean(client?.email && client.email.toLowerCase() === email);
-      return { id: row.id, date: row.appointment_date, time: row.appointment_time.slice(0, 5), status: row.status, title: staff || own ? service?.name || "Appointment" : "Booked", patient: staff ? client?.full_name || "Patient" : own ? "My appointment" : "", reference: staff || own ? row.reference_no : "", own };
+      return { id: row.id, date: row.appointment_date, time: row.appointment_time.slice(0, 5), status: row.status, title: staff || own ? service?.name || "Appointment" : "Booked", category: staff || own ? category?.name || "Appointment" : "Booked", color: category?.calendar_color || "#c65373", patient: staff ? client?.full_name || "Patient" : own ? "My appointment" : "", reference: staff || own ? row.reference_no : "", own };
     });
     return NextResponse.json({ events, blocks: blocks || [], role: profile?.role || "patient" });
   } catch (error) {
@@ -46,4 +47,3 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unable to load the clinic calendar." }, { status: 500 });
   }
 }
-

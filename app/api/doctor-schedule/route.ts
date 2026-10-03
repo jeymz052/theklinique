@@ -89,17 +89,27 @@ export async function POST(request: Request) {
   if (!user) return NextResponse.json({ error: "Doctor access is required." }, { status: 403 });
   try {
     const body = await request.json();
-    const date = String(body.date || "");
+    const startDate = String(body.startDate || body.date || "");
+    const endDate = String(body.endDate || startDate);
     const reason = String(body.reason || "").trim();
-    if (!isIsoDate(date)) return NextResponse.json({ error: "Choose a valid blocked date." }, { status: 400 });
-    const { data, error } = await adminClient().from("blocked_dates").insert({
-      blocked_date: date,
+    if (!isIsoDate(startDate) || !isIsoDate(endDate) || endDate < startDate) {
+      return NextResponse.json({ error: "Choose a valid date range. The end date must be on or after the start date." }, { status: 400 });
+    }
+    const start = new Date(`${startDate}T00:00:00Z`);
+    const end = new Date(`${endDate}T00:00:00Z`);
+    const totalDays = Math.floor((end.getTime() - start.getTime()) / 86_400_000) + 1;
+    if (totalDays > 366) return NextResponse.json({ error: "A blocked-date range cannot exceed 366 days." }, { status: 400 });
+    const rows = Array.from({ length: totalDays }, (_, index) => ({
+      blocked_date: new Date(start.getTime() + index * 86_400_000).toISOString().slice(0, 10),
       reason: reason || null,
       created_by: user.id,
-    }).select("id, blocked_date, reason, created_at").single();
-    if (error?.code === "23505") return NextResponse.json({ error: "That date is already blocked." }, { status: 409 });
+    }));
+    const { data, error } = await adminClient().from("blocked_dates").upsert(rows, {
+      onConflict: "blocked_date",
+      ignoreDuplicates: true,
+    }).select("id, blocked_date, reason, created_at");
     if (error) throw error;
-    return NextResponse.json({ block: data }, { status: 201 });
+    return NextResponse.json({ blocks: data || [], added: data?.length || 0, requested: totalDays }, { status: 201 });
   } catch (error) {
     console.error("Unable to block date:", error);
     return NextResponse.json({ error: "Unable to add the blocked date." }, { status: 500 });
