@@ -11,6 +11,7 @@ import { FEATURED_FACEBOOK_REEL, normalizeFacebookPostUrl } from "@/lib/landing-
 import type { BlogPost } from "@/lib/blog";
 
 type LandingPackage = { id: string; name: string; description: string | null; price: number; category: string };
+type LandingCategory = { id: string; name: string; slug: string };
 
 function isEmbeddableFacebookPost(url: string) {
   try {
@@ -49,8 +50,10 @@ export default function Home() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [compactViewport, setCompactViewport] = useState(false);
   const [landingPackages, setLandingPackages] = useState<LandingPackage[]>([]);
+  const [landingCategories, setLandingCategories] = useState<LandingCategory[]>([]);
   const [content, setContent] = useState<LandingContent | null>(null);
   const [blogPosts, setBlogPosts] = useState<BlogPost[]>([]);
+  const [showAllServices, setShowAllServices] = useState(false);
   const [heroSlide, setHeroSlide] = useState(0);
   const heroMedia = content?.heroMedia || [];
   const activeHeroSlide = heroMedia.length ? heroSlide % heroMedia.length : 0;
@@ -87,6 +90,7 @@ export default function Home() {
       .then((response) => response.ok ? response.json() : Promise.reject())
       .then((catalog) => {
         setLandingPackages(catalog.products || []);
+        setLandingCategories(catalog.categories || []);
       })
       .catch(() => undefined);
   }, []);
@@ -337,7 +341,7 @@ export default function Home() {
       <section className="services-section" id="services">
         <div className="section-header">
           <div className="section-header-left"><p className="section-label">{content?.servicesEyebrow || "Our Signature Services"}</p><h2>{content?.servicesTitle || "What We Do Best"}</h2></div>
-          <button type="button" className="view-all" id="view-all-services-btn" onClick={() => openBooking()}>Book a Service →</button>
+          <button type="button" className="view-all" id="view-all-services-btn" aria-expanded={showAllServices} onClick={() => setShowAllServices(current => !current)}>{showAllServices ? "Show fewer services" : "View all services"} <i className={`fa-solid ${showAllServices ? "fa-arrow-up" : "fa-arrow-down"}`} /></button>
         </div>
         <div className="services-grid">
           {(content?.serviceShowcase?.length ? content.serviceShowcase : [
@@ -345,9 +349,9 @@ export default function Home() {
             { image: "/images/fillers.png", alt: "Dermal fillers", name: "Fillers", tagline: "Enhance Your Natural Beauty." },
             { image: "/images/skin boosters.png", alt: "Skin boosters", name: "Skin Boosters", tagline: "Deep Hydration. Lasting Glow." },
             { image: "/images/lasers.png", alt: "Laser skin treatments", name: "Lasers", tagline: "Clearer Skin. Brighter You." },
-          ]).map((service,index) => { const article=blogPosts.find(post=>`${post.title} ${post.category}`.toLowerCase().includes(service.name.toLowerCase()));const destination=article?`/blog/${article.slug}`:`/blog?service=${encodeURIComponent(service.name)}`;return <a key={`${service.name}-${index}`} className="service-card" href={destination} target="_blank" rel="noopener noreferrer">{service.image?<img className="service-card-img" src={service.image} alt={service.alt||service.name} style={{width:"100%",height:"auto",aspectRatio:"3/4",objectFit:"cover"}}/>:<div className="service-card-img service-card-placeholder"><i className="fa-solid fa-spa"/></div>}<div className="service-card-overlay"/><div className="service-card-content"><p className="service-card-name">{service.name}</p><p className="service-card-tagline">{service.tagline}</p><span className="service-card-btn" aria-label={`Learn about ${service.name}`}>→</span></div></a>})}
+          ]).slice(0,showAllServices?undefined:4).map((service,index) => {const hint=service.name.toLowerCase(),aliases=hint.includes("botox")?["botox","neurotoxin"]:hint.includes("filler")?["filler"]:hint.includes("skin booster")?["skin booster"]:hint.includes("laser")?["laser"]:[hint];const relatedCategory=landingCategories.find(category=>aliases.some(alias=>`${category.name} ${category.slug}`.toLowerCase().replaceAll("-"," ").includes(alias)));const article=blogPosts.find(post=>post.service_category_id===relatedCategory?.id);return <article key={`${service.name}-${index}`} className="service-card">{service.image?<img className="service-card-img" src={service.image} alt={service.alt||service.name} style={{width:"100%",height:"auto",aspectRatio:"3/4",objectFit:"cover"}}/>:<div className="service-card-img service-card-placeholder"><i className="fa-solid fa-spa"/></div>}<div className="service-card-overlay"/><div className="service-card-content"><p className="service-card-name">{service.name}</p><p className="service-card-tagline">{service.tagline}</p><div className="service-card-actions"><button type="button" onClick={()=>openBooking(relatedCategory?.name||service.name)}><i className="fa-solid fa-calendar-plus"/> Book appointment</button><Link href={article?`/blog/${article.slug}`:"/blog"}><i className="fa-regular fa-file-lines"/> View details</Link></div></div></article>})}
         </div>
-        <div className="landing-packages-block"><div className="landing-packages-copy"><p className="section-label">Clinic Packages</p><h3>Plans for consistent care</h3><p>Ask the clinic about package eligibility, inclusions, and scheduling.</p><button type="button" onClick={() => setBookingOpen(true)}>Book with a package <i className="fa-solid fa-arrow-right" /></button></div><div className="landing-package-list">{(landingPackages.length ? landingPackages.slice(0, 6) : [{ id: "underarms", name: "Underarms", description: "Unlimited diode laser hair removal for one year.", price: 12000, category: "Laser Hair Removal" }, { id: "lip", name: "Upper / Lower Lip", description: "Unlimited diode laser hair removal for one year.", price: 10000, category: "Laser Hair Removal" }, { id: "bikini", name: "Bikini Lines", description: "Unlimited diode laser hair removal for one year.", price: 12000, category: "Laser Hair Removal" }]).map((item) => <article key={item.id}><span><i className="fa-solid fa-box-open" /></span><div><small>{item.category}</small><h4>{item.name}</h4><p>{item.description}</p></div><strong>PHP {Number(item.price).toLocaleString()}</strong></article>)}</div></div>
+        <div className="landing-packages-block"><div className="landing-packages-copy"><p className="section-label">Clinic Packages</p><h3>Plans for consistent care</h3><p>Ask the clinic about package eligibility, inclusions, and scheduling.</p><button type="button" onClick={() => setBookingOpen(true)}>Book with a package <i className="fa-solid fa-arrow-right" /></button></div><div className="landing-package-list">{(landingPackages.length ? landingPackages.slice(0, 6) : [{ id: "underarms", name: "Underarms", description: "Unlimited diode laser hair removal for one year.", price: 12000, category: "Laser Hair Removal" }, { id: "lip", name: "Upper / Lower Lip", description: "Unlimited diode laser hair removal for one year.", price: 10000, category: "Laser Hair Removal" }, { id: "bikini", name: "Bikini Lines", description: "Unlimited diode laser hair removal for one year.", price: 12000, category: "Laser Hair Removal" }]).map((item) => {const relatedCategory=landingCategories.find(category=>{const haystack=`${category.name} ${category.slug}`.toLowerCase().replaceAll("-"," "),needle=item.category.toLowerCase();return haystack.includes(needle)||needle.includes(haystack)}),article=blogPosts.find(post=>post.service_category_id===relatedCategory?.id);return <article key={item.id}><span><i className="fa-solid fa-box-open" /></span><div><small>{item.category}</small><h4>{item.name}</h4><p>{item.description}</p><div className="landing-package-actions"><button type="button" onClick={()=>openBooking(item.category)}><i className="fa-solid fa-calendar-plus"/> Book</button>{article?<Link href={`/blog/${article.slug}`}>View details <i className="fa-solid fa-arrow-right"/></Link>:<Link href="/blog">View details <i className="fa-solid fa-arrow-right"/></Link>}</div></div><strong>PHP {Number(item.price).toLocaleString()}</strong></article>})}</div></div>
       </section>
 
       {/* ── MOVING RESULTS GALLERY ── */}
