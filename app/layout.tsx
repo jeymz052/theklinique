@@ -4,8 +4,8 @@ import "./globals.css";
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.APP_URL || "http://localhost:3000"),
   icons: {
-    icon: [{ url: "/icon.png", type: "image/png", sizes: "500x500" }],
-    apple: [{ url: "/icon.png", type: "image/png", sizes: "500x500" }],
+    icon: [{ url: "/icon.jpg", type: "image/jpeg", sizes: "1536x1024" }],
+    apple: [{ url: "/apple-icon.jpg", type: "image/jpeg", sizes: "1536x1024" }],
   },
   openGraph: {
     type: "website",
@@ -13,13 +13,13 @@ export const metadata: Metadata = {
     title: "The Klinique by Dr. Kharyl",
     description: "Doctor-led medical aesthetic care in Cagayan de Oro City.",
     url: "/",
-    images: [{ url: "/opengraph-image", width: 1200, height: 630, alt: "The Klinique by Dr. Kharyl" }],
+    images: [{ url: "/opengraph-image.jpg", width: 1536, height: 1024, alt: "The Klinique Medical and Aesthetic Clinic logo" }],
   },
   twitter: {
     card: "summary_large_image",
     title: "The Klinique by Dr. Kharyl",
     description: "Doctor-led medical aesthetic care in Cagayan de Oro City.",
-    images: ["/opengraph-image"],
+    images: ["/opengraph-image.jpg"],
   },
   title: "The Klinique | Medical Aesthetic Clinic — Cagayan de Oro City",
   description:

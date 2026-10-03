@@ -6,7 +6,7 @@ import Image from "next/image";
 import Link from "next/link";
 import BookingForm from "@/app/components/BookingForm";
 import LandingContactForm from "@/app/components/LandingContactForm";
-import type { LandingContent, LandingMedia } from "@/app/components/WebsiteContentManager";
+import { DEFAULT_NAVIGATION_ORDER, DEFAULT_SERVICE_ICONS, type ContentTab, type LandingContent, type LandingMedia } from "@/app/components/WebsiteContentManager";
 import { FEATURED_FACEBOOK_REEL, normalizeFacebookPostUrl } from "@/lib/landing-social";
 import type { BlogPost } from "@/lib/blog";
 
@@ -42,6 +42,7 @@ const FAQS = [
   { question: "Can I reschedule or cancel?", answer: "Please notify the clinic at least 24 hours before your appointment. Late cancellations, no-shows, and reservation-fee handling follow The Klinique cancellation policy." },
   { question: "Will I receive aftercare instructions?", answer: "Yes. Treatment-specific aftercare is discussed and provided at the clinic. Your booking review also shows a general preview so you know what to expect." },
 ];
+const LANDING_NAV:Record<ContentTab,{label:string;href:string;icon:string}>={home:{label:"Home",href:"#home",icon:"fa-house"},about:{label:"About",href:"#about",icon:"fa-spa"},services:{label:"Services",href:"#services",icon:"fa-syringe"},doctor:{label:"Doctor",href:"#doctor",icon:"fa-user-doctor"},social:{label:"Socials",href:"#socials",icon:"fa-heart"},gallery:{label:"Gallery",href:"#gallery",icon:"fa-images"},faq:{label:"FAQ",href:"#faq",icon:"fa-circle-question"},contact:{label:"Contact",href:"#contact",icon:"fa-envelope"}};
 
 export default function Home() {
   const [bookingOpen, setBookingOpen] = useState(false);
@@ -109,8 +110,12 @@ export default function Home() {
     const selectors = [
       ".services-bar .service-icon-item",
       ".about-image", ".about-content > *",
+      ".landing-doctor-copy > *", ".landing-doctor-photo",
       ".services-section .section-header", ".services-section .service-card", ".landing-packages-block",
+      ".landing-media-gallery > header > *", ".landing-results-viewport", ".landing-results-note",
       ".quote-banner > *", ".contact-strip > *",
+      ".landing-blog > header > *", ".landing-blog > div > a", ".landing-blog-empty",
+      ".landing-social-copy > *", ".landing-social-posts > article",
       ".landing-faq-intro", ".landing-faq-list details",
       ".landing-contact-details > *", ".landing-contact-form",
       ".landing-location-head > *", ".landing-map-frame",
@@ -148,6 +153,8 @@ export default function Home() {
     };
   }, []);
 
+  const navigationOrder=(content?.navigationOrder||DEFAULT_NAVIGATION_ORDER).filter(key=>LANDING_NAV[key]),primaryNavigation=navigationOrder.slice(0,4),moreNavigation=navigationOrder.slice(4);
+  const sectionOrder=(key:ContentTab,offset=0)=>100+navigationOrder.indexOf(key)*10+offset;
   return (
     <div className={`landing-page ${compactViewport ? "landing-page--compact" : ""}`}>
       {/* ── BOOKING MODAL ── */}
@@ -176,13 +183,7 @@ export default function Home() {
             />
           </Link>
 
-          <ul className={`nav-links ${menuOpen ? "is-open" : ""}`}>
-            <li><a href="#home" className="active" onClick={() => setMenuOpen(false)}>Home</a></li>
-            <li><a href="#services" onClick={() => setMenuOpen(false)}>Services</a></li>
-            <li><a href="#about" onClick={() => setMenuOpen(false)}>About</a></li>
-            <li><a href="#gallery" onClick={() => setMenuOpen(false)}>Gallery</a></li>
-            <li className="nav-more"><details><summary>More <i className="fa-solid fa-chevron-down"/></summary><div className="nav-more-menu"><a href="#blog" onClick={() => setMenuOpen(false)}><i className="fa-regular fa-newspaper"/> Blogs</a><a href="#socials" onClick={() => setMenuOpen(false)}><i className="fa-regular fa-heart"/> Socials</a><a href="#faq" onClick={() => setMenuOpen(false)}><i className="fa-regular fa-circle-question"/> FAQ</a><a href="#contact" onClick={() => setMenuOpen(false)}><i className="fa-regular fa-envelope"/> Contact</a></div></details></li>
-          </ul>
+          <ul className={`nav-links ${menuOpen ? "is-open" : ""}`}>{primaryNavigation.map((key,index)=>{const item=LANDING_NAV[key];return <li key={key}><a href={item.href} className={index===0?"active":""} onClick={()=>setMenuOpen(false)}>{item.label}</a></li>})}<li className="nav-more"><details><summary>More <i className="fa-solid fa-chevron-down"/></summary><div className="nav-more-menu">{moreNavigation.map(key=>{const item=LANDING_NAV[key];return <a href={item.href} key={key} onClick={()=>setMenuOpen(false)}><i className={`fa-regular ${item.icon}`}/> {item.label}</a>})}<a href="#blog" onClick={()=>setMenuOpen(false)}><i className="fa-regular fa-newspaper"/> Blogs</a></div></details></li></ul>
         </div>
 
         <div className="nav-actions">
@@ -218,7 +219,7 @@ export default function Home() {
       </nav>
 
       {/* ── HERO ── */}
-      <section className="hero" id="home" style={{ paddingTop: "88px" }}>
+      <section className="hero" id="home" style={{ paddingTop: "88px", order:sectionOrder("home") }}>
         <div className="hero-bg">{heroMedia[activeHeroSlide]?.type === "video" ? <video key={`${activeHeroSlide}-${heroMedia[activeHeroSlide].url}`} src={heroMedia[activeHeroSlide].url} autoPlay muted loop playsInline /> : <Image key={`${activeHeroSlide}-${heroMedia[activeHeroSlide]?.url || "default"}`} src={heroMedia[activeHeroSlide]?.url || "/images/herobg.png"} alt={heroMedia[activeHeroSlide]?.alt || "The Klinique — Your unique beauty in mind"} fill style={{ objectFit: "cover", objectPosition: "center right" }} priority={activeHeroSlide === 0} quality={90} unoptimized={Boolean(heroMedia[activeHeroSlide]?.url?.startsWith("http"))} />}</div>
         <div className="hero-overlay" />
 
@@ -249,35 +250,27 @@ export default function Home() {
       </section>
 
       {/* ── SERVICES ICON BAR ── */}
-      <section className="services-bar">
+      <section className="services-bar" style={{order:sectionOrder("services")}}>
         <div className="services-bar-inner">
-          {[
-            { src: "/images/botox-removebg-preview.png",          alt: "Botox",          name: "Botox &\nNeuromodulators", category: "Botox & Neuromodulators" },
-            { src: "/images/fillers-removebg-preview.png",        alt: "Fillers",        name: "Fillers", category: "Fillers" },
-            { src: "/images/skinboosters-removebg-preview.png",   alt: "Skin Boosters",  name: "Skin Boosters", category: "Skin Boosters" },
-            { src: "/images/lasers-removebg-preview.png",         alt: "Lasers",         name: "Lasers &\nSkin Rejuvenation", category: "Laser Treatments" },
-            { src: "/images/facialandskin-removebg-preview.png",  alt: "Facial & Skin",  name: "Facial & Skin\nTreatments", category: "Facial & Skin Treatments" },
-            { src: "/images/IV_teraphy-removebg-preview.png",     alt: "IV Therapy",     name: "IV Therapy\n& Wellness", category: "IV Therapy & Wellness" },
-            { src: "/images/otherservices-removebg-preview.png",  alt: "Other Services", name: "Other\nServices", category: null },
-          ].map((s) => (
+          {(content?.serviceIcons??DEFAULT_SERVICE_ICONS).map((s) => (
             <button
               key={s.alt}
               type="button"
               className="service-icon-item"
-              onClick={() => openBooking(s.category)}
+              onClick={() => openBooking(s.category||null)}
               style={{ cursor: "pointer", background: "none", border: "none", padding: 0 }}
             >
               <div className="service-icon-circle">
-                <img src={s.src} alt={s.alt} className="service-icon-img" />
+                {s.image?<img src={s.image} alt={s.alt||s.name} className="service-icon-img" />:<i className="fa-solid fa-spa"/>}
               </div>
-              <span className="service-icon-name">{s.name.replace(/\n/g, "\u00A0")}</span>
+              <span className="service-icon-name">{s.name}</span>
             </button>
           ))}
         </div>
       </section>
 
       {/* ── ABOUT / INTERIOR ── */}
-      <section className="about-section" id="about">
+      <section className="about-section" id="about" style={{order:sectionOrder("about")}}>
         <div className="about-image">
           <Image
             src={content?.aboutImage || "/images/the klinique interior.jpg"}
@@ -332,13 +325,13 @@ export default function Home() {
       </section>
 
       {/* ── MEET THE DOCTOR ── */}
-      <section className="landing-doctor-section">
+      <section className="landing-doctor-section" id="doctor" style={{order:sectionOrder("doctor")}}>
         <div className="landing-doctor-copy"><p className="section-label landing-script-accent">{content?.doctorEyebrow || "Meet Your Doctor"}</p><h2>{content?.doctorName || "Dr. Kharyl Dence"}</h2><h3>{content?.doctorTitle || "Medical and Aesthetic Doctor"}</h3><p>{content?.doctorBio || "Doctor-led, evidence-based aesthetic care shaped around your goals, comfort, and natural features."}</p><button type="button" className="btn-primary" onClick={() => setBookingOpen(true)}><i className="fa-solid fa-calendar-plus" /> Book with Dr. Kharyl</button></div>
         <div className="landing-doctor-photo">{content?.doctorPhoto ? <img src={content.doctorPhoto} alt={content.doctorName || "Dr. Kharyl Dence"} /> : <div><i className="fa-solid fa-user-doctor" /><span>Doctor photo can be uploaded in Settings → Website</span></div>}</div>
       </section>
 
       {/* ── SIGNATURE SERVICES ── */}
-      <section className="services-section" id="services">
+      <section className="services-section" id="services" style={{order:sectionOrder("services",1)}}>
         <div className="section-header">
           <div className="section-header-left"><p className="section-label">{content?.servicesEyebrow || "Our Signature Services"}</p><h2>{content?.servicesTitle || "What We Do Best"}</h2></div>
           <button type="button" className="view-all" id="view-all-services-btn" aria-expanded={showAllServices} onClick={() => setShowAllServices(current => !current)}>{showAllServices ? "Show fewer services" : "View all services"} <i className={`fa-solid ${showAllServices ? "fa-arrow-up" : "fa-arrow-down"}`} /></button>
@@ -355,19 +348,19 @@ export default function Home() {
       </section>
 
       {/* ── MOVING RESULTS GALLERY ── */}
-      {(content?.galleryMedia?.length || 0) > 0 && <LandingResultsBoard items={content!.galleryMedia} eyebrow={content?.galleryEyebrow} title={content?.galleryTitle} description={content?.galleryDescription} badge={content?.galleryBadge}/>}
+      {(content?.galleryMedia?.length || 0) > 0 && <LandingResultsBoard items={content!.galleryMedia} eyebrow={content?.galleryEyebrow} title={content?.galleryTitle} description={content?.galleryDescription} badge={content?.galleryBadge} order={sectionOrder("gallery")}/>}
 
       {/* ── GALLERY ── */}
-      <section className="quote-banner" id={(content?.galleryMedia?.length || 0) ? "gallery-message" : "gallery"} style={{ backgroundImage: "url('/images/banner background.png')", backgroundSize: "cover", backgroundPosition: "center" }}>
+      <section className="quote-banner" id={(content?.galleryMedia?.length || 0) ? "gallery-message" : "gallery"} style={{ backgroundImage: "url('/images/banner background.png')", backgroundSize: "cover", backgroundPosition: "center", order:sectionOrder("gallery",1) }}>
         <div className="quote-banner-text-group"><p className="quote-text landing-script-accent">&ldquo;{content?.quoteText || "Healthy skin is a form of self-care."}&rdquo;</p><p className="quote-sub">{content?.quoteSubtitle || "Confidence · Wellness · A Brighter You"}</p></div>
         <button type="button" className="btn-book quote-book-btn" id="quote-book-btn" onClick={() => openBooking()}><i className="fa-solid fa-calendar-plus" /> Book Now</button>
       </section>
 
       {/* ── BLOGS ── */}
-      <section className="landing-blog" id="blog"><header><div><p className="section-label">The Klinique Blog</p><h2>Learn with Dr. Kharyl</h2><span>Procedure guides, what to expect, aftercare, and clinic stories.</span></div><Link href="/blog">View all blogs <i className="fa-solid fa-arrow-right"/></Link></header>{blogPosts.length>0?<div>{blogPosts.slice(0,3).map(post=><Link href={`/blog/${post.slug}`} key={post.id}>{post.hero_url?(post.hero_type==="video"?<video src={post.hero_url} muted/>:<img src={post.hero_url} alt={post.title}/>):<span className="landing-blog-placeholder"><i className="fa-solid fa-newspaper"/></span>}<small>{post.category}</small><h3>{post.title}</h3><p>{post.excerpt}</p><strong>Read blog <i className="fa-solid fa-arrow-right"/></strong></Link>)}</div>:<div className="landing-blog-empty"><i className="fa-regular fa-newspaper"/><p>Published blogs will appear here.</p></div>}</section>
+      <section className="landing-blog" id="blog" style={{order:sectionOrder("gallery",2)}}><header><div><p className="section-label">The Klinique Blog</p><h2>Learn with Dr. Kharyl</h2><span>Procedure guides, what to expect, aftercare, and clinic stories.</span></div><Link href="/blog">View all blogs <i className="fa-solid fa-arrow-right"/></Link></header>{blogPosts.length>0?<div>{blogPosts.slice(0,3).map(post=><Link href={`/blog/${post.slug}`} key={post.id}>{post.hero_url?(post.hero_type==="video"?<video src={post.hero_url} muted/>:<img src={post.hero_url} alt={post.title}/>):<span className="landing-blog-placeholder"><i className="fa-solid fa-newspaper"/></span>}<small>{post.category}</small><h3>{post.title}</h3><p>{post.excerpt}</p><strong>Read blog <i className="fa-solid fa-arrow-right"/></strong></Link>)}</div>:<div className="landing-blog-empty"><i className="fa-regular fa-newspaper"/><p>Published blogs will appear here.</p></div>}</section>
 
       {/* ── LATEST SOCIAL POSTS ── */}
-      <section className="landing-social-feature" id="socials">
+      <section className="landing-social-feature" id="socials" style={{order:sectionOrder("social")}}>
         <div className="landing-social-copy">
           <p className="section-label">Social Updates</p>
           <h2 className="landing-script-accent">{content?.socialHeading || "Latest from The Klinique"}</h2>
@@ -391,7 +384,7 @@ export default function Home() {
         </div>
       </section>
 
-      <div className="contact-strip">
+      <div className="contact-strip" style={{order:sectionOrder("social",1)}}>
         <div className="contact-item"><i className="fa-solid fa-location-dot" /><span>{content?.address || "Cagayan de Oro City, PH 9000"}</span></div>
         <div className="contact-item"><i className="fa-regular fa-clock" /><span>{content?.clinicHours || "By Appointment Only"}</span></div>
         <a href="https://www.instagram.com/thekliniqueph?igsh=MXQwcTRubjJ1MWd3&utm_source=qr&fbclid=IwY2xjawUm8flleHRuA2FlbQIxMABwZG9mBWJyaWQRMVd1ekpOMUpNQkJnVGMyeExzcnRjBmFwcF9pZBAyMjIwMzkxNzg4MjAwODkyAAEeabqHRNs5LxfdN_ea_rT-vNkzsb9-p2qlISX0fB-bQB4J2kXiqqNnl0sr47U_aem_1VdrPw10C7rUT1kHJ5sMAg" target="_blank" rel="noopener noreferrer" className="contact-item"><i className="fa-brands fa-instagram" /><span>@thekliniqueph · The Klinique by Dr. Kharyl</span></a>
@@ -399,13 +392,13 @@ export default function Home() {
       </div>
 
       {/* ── FAQ ── */}
-      <section className="landing-faq" id="faq">
+      <section className="landing-faq" id="faq" style={{order:sectionOrder("faq")}}>
         <div className="landing-faq-inner"><div className="landing-faq-intro"><p className="section-label">Frequently Asked Questions</p><h2>Helpful answers before your visit</h2><p>Still unsure which treatment fits your goals? Start with a consultation and let the doctor guide your plan.</p><button type="button" onClick={() => setBookingOpen(true)}><i className="fa-solid fa-calendar-plus" /> Book a consultation</button></div>
         <div className="landing-faq-list">{(content?.faqs?.length ? content.faqs : FAQS).map((item, index) => <details key={`${item.question}-${index}`} open={index === 0}><summary><span>{String(index + 1).padStart(2, "0")}</span>{item.question}<i className="fa-solid fa-plus" /></summary><p>{item.answer}</p></details>)}</div></div>
       </section>
 
       {/* ── CONTACT ── */}
-      <section className="landing-contact" id="contact">
+      <section className="landing-contact" id="contact" style={{order:sectionOrder("contact")}}>
         <div className="landing-contact-inner"><div className="landing-contact-details">
           <p className="section-label">{content?.contactEyebrow || "Contact The Klinique"}</p><h2>{content?.contactTitle || "Let’s talk about your goals"}</h2><p>{content?.contactBody || "Send a message for treatment questions, package inquiries, or help with an existing appointment."}</p>
           <div className="landing-contact-list">
@@ -420,13 +413,13 @@ export default function Home() {
       </section>
 
       {/* ── LOCATION ── */}
-      <section className="landing-location" aria-labelledby="location-heading">
+      <section className="landing-location" aria-labelledby="location-heading" style={{order:sectionOrder("contact",1)}}>
         <div className="landing-location-head"><div><p className="section-label">Visit The Klinique</p><h2 id="location-heading">The Klinique Medical and Aesthetic Clinic</h2><p><i className="fa-solid fa-location-dot" /> Cagayan de Oro City, Misamis Oriental 9000, Philippines</p></div><a href="https://www.google.com/maps/search/?api=1&query=The+Klinique+Medical+and+Aesthetic+Clinic+Cagayan+de+Oro" target="_blank" rel="noopener noreferrer">Get directions <i className="fa-solid fa-arrow-right" /></a></div>
         <div className="landing-map-frame"><iframe title="Google Map showing The Klinique in Cagayan de Oro" src="https://www.google.com/maps?q=The%20Klinique%20Medical%20and%20Aesthetic%20Clinic%20Cagayan%20de%20Oro&output=embed" loading="lazy" referrerPolicy="no-referrer-when-downgrade" allowFullScreen /></div>
       </section>
 
       {/* ── FOOTER ── */}
-      <footer className="footer-info footer-info--extended">
+      <footer className="footer-info footer-info--extended" style={{order:sectionOrder("contact",2)}}>
         <div className="footer-inner">
           <div className="footer-logo"><Image src="/images/the_klinique_logo-removebg-preview.png" alt="The Klinique" width={220} height={110} style={{ height: "110px", width: "auto" }} /></div>
           <div className="footer-divider" aria-hidden="true" />
@@ -441,8 +434,8 @@ export default function Home() {
   );
 }
 
-function LandingResultsBoard({items,eyebrow,title,description,badge}:{items:LandingMedia[];eyebrow?:string;title?:string;description?:string;badge?:string}) {
-  return <section className="landing-media-gallery landing-results-board" id="gallery">
+function LandingResultsBoard({items,eyebrow,title,description,badge,order}:{items:LandingMedia[];eyebrow?:string;title?:string;description?:string;badge?:string;order?:number}) {
+  return <section className="landing-media-gallery landing-results-board" id="gallery" style={{order}}>
     <header><div><p className="section-label">{eyebrow||"Before & After"}</p><h2>{title||"Featured Results"}</h2><span>{description||"Aesthetic transformations and clinic stories."}</span></div><strong>{badge||"Results Board"}</strong></header>
     <div className="landing-results-viewport"><div className={`landing-results-track ${items.length===1?"is-single":""}`}>
       {[...items,...items].map((item,index)=>{const originalIndex=index%items.length;const duplicate=index>=items.length;return <article className="landing-result-card" key={`${duplicate?"copy":"original"}-${item.url}-${originalIndex}`} aria-hidden={duplicate||undefined}><header><div><span>Aesthetic Results</span><h3>{item.alt||`Featured result ${originalIndex+1}`}</h3></div><small>Case {String(originalIndex+1).padStart(2,"0")}</small></header><div className="landing-result-media">{item.type==="video"?<video src={item.url} controls={!duplicate} autoPlay muted loop playsInline/>:<img src={item.url} alt={duplicate?"":item.alt}/>}</div></article>})}

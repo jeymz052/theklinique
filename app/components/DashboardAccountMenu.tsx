@@ -11,6 +11,8 @@ interface DashboardAccountMenuProps {
   signingOut?: boolean;
   profileHref?: string;
   settingsHref?: string;
+  onProfileClick?: () => void;
+  onSettingsClick?: () => void;
 }
 
 export default function DashboardAccountMenu({
@@ -21,6 +23,8 @@ export default function DashboardAccountMenu({
   signingOut = false,
   profileHref = "/dashboard/profile",
   settingsHref = "/dashboard/settings",
+  onProfileClick,
+  onSettingsClick,
 }: DashboardAccountMenuProps) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -51,8 +55,8 @@ export default function DashboardAccountMenu({
             {email && <span>{email}</span>}
             <small>{role}</small>
           </div>
-          <Link className="dk-account-item" href={profileHref} onClick={() => setOpen(false)}><i className="fa-regular fa-user" /> Profile</Link>
-          <Link className="dk-account-item" href={settingsHref} onClick={() => setOpen(false)}><i className="fa-solid fa-gear" /> Settings</Link>
+          {onProfileClick ? <button type="button" className="dk-account-item" onClick={() => { setOpen(false); onProfileClick(); }}><i className="fa-regular fa-user" /> Profile</button> : <Link className="dk-account-item" href={profileHref} onClick={() => setOpen(false)}><i className="fa-regular fa-user" /> Profile</Link>}
+          {onSettingsClick ? <button type="button" className="dk-account-item" onClick={() => { setOpen(false); onSettingsClick(); }}><i className="fa-solid fa-gear" /> Settings</button> : <Link className="dk-account-item" href={settingsHref} onClick={() => setOpen(false)}><i className="fa-solid fa-gear" /> Settings</Link>}
           <button type="button" className="dk-account-item dk-account-logout" onClick={onSignOut} disabled={signingOut}>
             <i className="fa-solid fa-arrow-right-from-bracket" /> {signingOut ? "Signing out..." : "Log out"}
           </button>

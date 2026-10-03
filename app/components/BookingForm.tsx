@@ -119,6 +119,7 @@ const BOOKING_DRAFT_KEY = "theklinique.booking-draft.v1";
 
 type BookingPolicy = "terms" | "cancellation";
 type BookingType = "consultation" | "treatment";
+type IntakeQuestion={id:string;system_key:string|null;label:string;placeholder:string;input_type:"text"|"textarea"|"yes_no";applies_to:"both"|"consultation"|"treatment";required:boolean;active:boolean;sort_order:number};
 
 function BookingPolicyModal({ type, onClose }: { type: BookingPolicy; onClose: () => void }) {
   const isTerms = type === "terms";
@@ -192,6 +193,8 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
   const [isSignedIn, setIsSignedIn]       = useState(false);
   const [authResolved, setAuthResolved]   = useState(false);
   const [resumeReviewAfterAuth, setResumeReviewAfterAuth] = useState(false);
+  const [intakeQuestions,setIntakeQuestions]=useState<IntakeQuestion[]>([]);
+  const [customAnswers,setCustomAnswers]=useState<Record<string,string>>({});
 
   const service     = catalogServices.find((item) => item.id === selectedService);
   const isConsultationFollowUp = service?.slug === "follow-up-check-up" && Boolean(parentAppointmentId);
@@ -207,6 +210,11 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
   const grandTotal = treatmentTotal + packageTotal;
   const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
   const firstDay    = new Date(calYear, calMonth, 1).getDay();
+  const question=(key:string,fallback:{label:string;placeholder?:string})=>{const found=intakeQuestions.find(item=>item.system_key===key);return{label:found?.label||fallback.label,placeholder:found?.placeholder||fallback.placeholder||""}};
+  const visibleCustomQuestions=intakeQuestions.filter(item=>!item.system_key&&(item.applies_to==="both"||item.applies_to===bookingType));
+  const customRequiredComplete=visibleCustomQuestions.every(item=>!item.required||Boolean(customAnswers[item.id]?.trim()));
+
+  useEffect(()=>{void fetch("/api/intake-questions").then(r=>r.ok?r.json():{questions:[]}).then(x=>setIntakeQuestions(x.questions||[]))},[]);
 
   useEffect(() => {
     fetch("/api/booking-catalog")
@@ -501,6 +509,7 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
           pregnancyStatus: form.pregnancyStatus,
           previousReactions: form.previousReactions,
           recentProcedures: form.recentProcedures,
+          customAnswers,
           intakeConfirmed: form.intakeConfirmed,
           notes: form.notes,
           consentAcknowledged: form.consentAcknowledged,
@@ -814,16 +823,17 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
             <section className="bk-details-card bk-intake-card">
               <div className="bk-details-section-head"><div><p>{bookingType === "treatment" ? "Pre-treatment safety review" : "Visit preparation"}</p><small>Please review these answers for this appointment.</small></div><i className="fa-solid fa-heart-pulse" /></div>
               <div className="bk-form-grid">
-                <div className="bk-field bk-field-full"><label className="bk-label" htmlFor="b-concern">Main concern <span className="bk-required">*</span></label><textarea id="b-concern" className="bk-textarea" rows={2} value={form.chiefConcern} onChange={(e) => setForm((prev) => ({ ...prev, chiefConcern: e.target.value }))} placeholder="What would you like the doctor to assess?" required /></div>
-                <div className="bk-field bk-field-full"><label className="bk-label" htmlFor="b-goals">Goals or expected outcome <span className="bk-optional">(optional)</span></label><textarea id="b-goals" className="bk-textarea" rows={2} value={form.treatmentGoals} onChange={(e) => setForm((prev) => ({ ...prev, treatmentGoals: e.target.value }))} /></div>
+                <div className="bk-field bk-field-full"><label className="bk-label" htmlFor="b-concern">{question("chief_concern",{label:"Main concern"}).label} <span className="bk-required">*</span></label><textarea id="b-concern" className="bk-textarea" rows={2} value={form.chiefConcern} onChange={(e) => setForm((prev) => ({ ...prev, chiefConcern: e.target.value }))} placeholder={question("chief_concern",{label:"Main concern",placeholder:"What would you like the doctor to assess?"}).placeholder} required /></div>
+                <div className="bk-field bk-field-full"><label className="bk-label" htmlFor="b-goals">{question("treatment_goals",{label:"Goals or expected outcome"}).label} <span className="bk-optional">(optional)</span></label><textarea id="b-goals" className="bk-textarea" rows={2} value={form.treatmentGoals} onChange={(e) => setForm((prev) => ({ ...prev, treatmentGoals: e.target.value }))} placeholder={question("treatment_goals",{label:"Goals or expected outcome"}).placeholder}/></div>
                 {bookingType === "treatment" && <>
-                  <div className="bk-field bk-field-half"><label className="bk-label" htmlFor="b-allergies">Allergies <span className="bk-required">*</span></label><input id="b-allergies" className="bk-input" value={form.allergies} onChange={(e) => setForm((prev) => ({ ...prev, allergies: e.target.value }))} placeholder="Enter None if none known" required /></div>
-                  <div className="bk-field bk-field-half"><label className="bk-label" htmlFor="b-medications">Current medications <span className="bk-required">*</span></label><input id="b-medications" className="bk-input" value={form.currentMedications} onChange={(e) => setForm((prev) => ({ ...prev, currentMedications: e.target.value }))} placeholder="Enter None if none" required /></div>
-                  <div className="bk-field bk-field-full"><label className="bk-label" htmlFor="b-history">Relevant medical conditions <span className="bk-required">*</span></label><textarea id="b-history" className="bk-textarea" rows={2} value={form.medicalHistory} onChange={(e) => setForm((prev) => ({ ...prev, medicalHistory: e.target.value }))} placeholder="Enter None if none" required /></div>
+                  <div className="bk-field bk-field-half"><label className="bk-label" htmlFor="b-allergies">{question("allergies",{label:"Allergies"}).label} <span className="bk-required">*</span></label><input id="b-allergies" className="bk-input" value={form.allergies} onChange={(e) => setForm((prev) => ({ ...prev, allergies: e.target.value }))} placeholder={question("allergies",{label:"Allergies",placeholder:"Enter None if none known"}).placeholder} required /></div>
+                  <div className="bk-field bk-field-half"><label className="bk-label" htmlFor="b-medications">{question("current_medications",{label:"Current medications"}).label} <span className="bk-required">*</span></label><input id="b-medications" className="bk-input" value={form.currentMedications} onChange={(e) => setForm((prev) => ({ ...prev, currentMedications: e.target.value }))} placeholder={question("current_medications",{label:"Current medications",placeholder:"Enter None if none"}).placeholder} required /></div>
+                  <div className="bk-field bk-field-full"><label className="bk-label" htmlFor="b-history">{question("medical_history",{label:"Relevant medical conditions"}).label} <span className="bk-required">*</span></label><textarea id="b-history" className="bk-textarea" rows={2} value={form.medicalHistory} onChange={(e) => setForm((prev) => ({ ...prev, medicalHistory: e.target.value }))} placeholder={question("medical_history",{label:"Relevant medical conditions",placeholder:"Enter None if none"}).placeholder} required /></div>
                   <div className="bk-field bk-field-half"><label className="bk-label" htmlFor="b-pregnancy">Pregnancy / breastfeeding</label><select id="b-pregnancy" className="bk-input" value={form.pregnancyStatus} onChange={(e) => setForm((prev) => ({ ...prev, pregnancyStatus: e.target.value }))}><option value="prefer_not_to_say">Prefer not to say</option><option value="not_applicable">Not applicable</option><option value="no">No</option><option value="yes">Yes</option><option value="unsure">Unsure</option></select></div>
                   <div className="bk-field bk-field-half"><label className="bk-label" htmlFor="b-reactions">Previous treatment reactions</label><input id="b-reactions" className="bk-input" value={form.previousReactions} onChange={(e) => setForm((prev) => ({ ...prev, previousReactions: e.target.value }))} placeholder="Enter None if none" /></div>
                   <div className="bk-field bk-field-full"><label className="bk-label" htmlFor="b-recent">Recent procedures or treatments</label><input id="b-recent" className="bk-input" value={form.recentProcedures} onChange={(e) => setForm((prev) => ({ ...prev, recentProcedures: e.target.value }))} placeholder="Include approximate dates, if any" /></div>
                 </>}
+                {visibleCustomQuestions.map(item=><div className="bk-field bk-field-full" key={item.id}><label className="bk-label" htmlFor={`custom-${item.id}`}>{item.label} {item.required?<span className="bk-required">*</span>:<span className="bk-optional">(optional)</span>}</label>{item.input_type==="textarea"?<textarea id={`custom-${item.id}`} className="bk-textarea" rows={2} value={customAnswers[item.id]||""} placeholder={item.placeholder} required={item.required} onChange={event=>setCustomAnswers(current=>({...current,[item.id]:event.target.value}))}/>:item.input_type==="yes_no"?<select id={`custom-${item.id}`} className="bk-input" value={customAnswers[item.id]||""} required={item.required} onChange={event=>setCustomAnswers(current=>({...current,[item.id]:event.target.value}))}><option value="">Choose an answer</option><option value="yes">Yes</option><option value="no">No</option></select>:<input id={`custom-${item.id}`} className="bk-input" value={customAnswers[item.id]||""} placeholder={item.placeholder} required={item.required} onChange={event=>setCustomAnswers(current=>({...current,[item.id]:event.target.value}))}/>}</div>)}
               </div>
               <label className="bk-intake-confirm"><input type="checkbox" checked={form.intakeConfirmed} onChange={(e) => setForm((prev) => ({ ...prev, intakeConfirmed: e.target.checked }))} /><span><strong>I reviewed this information</strong><small>These answers are accurate and current for this appointment.</small></span></label>
             </section>
@@ -861,7 +871,7 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
                 type="button"
                 id="step1-next"
                 className="bk-btn-primary"
-                disabled={!form.firstName || !form.lastName || !form.email || !form.phone || !form.dateOfBirth || !form.chiefConcern || !form.intakeConfirmed || (bookingType === "treatment" && (!form.allergies || !form.currentMedications || !form.medicalHistory)) || !form.agreed || !form.consentAcknowledged}
+                disabled={!form.firstName || !form.lastName || !form.email || !form.phone || !form.dateOfBirth || !form.chiefConcern || !customRequiredComplete || !form.intakeConfirmed || (bookingType === "treatment" && (!form.allergies || !form.currentMedications || !form.medicalHistory)) || !form.agreed || !form.consentAcknowledged}
                 onClick={() => setStep(2)}
               >
                 Next: Date & Time

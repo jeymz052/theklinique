@@ -22,7 +22,7 @@ export async function GET(request: Request) {
   const database = admin();
   const [charts, intakes] = await Promise.all([
     database.from("consultation_charts").select("appointment_id, clinical_assessment, subjective_notes, objective_notes, treatment_plan, follow_up_required, follow_up_recommended_date, follow_up_notes, follow_up_appointment_id, status, started_at, completed_at"),
-    database.from("appointment_intakes").select("appointment_id, chief_concern, treatment_goals, allergies_snapshot, medications_snapshot, medical_history_snapshot, pregnancy_status, previous_reactions, recent_procedures, information_confirmed_at"),
+    database.from("appointment_intakes").select("appointment_id, chief_concern, treatment_goals, allergies_snapshot, medications_snapshot, medical_history_snapshot, pregnancy_status, previous_reactions, recent_procedures, custom_answers, information_confirmed_at"),
   ]);
   if (charts.error || intakes.error) return NextResponse.json({ error: "Unable to load consultation charts." }, { status: 500 });
   return NextResponse.json({ charts: charts.data || [], intakes: intakes.data || [] });

@@ -143,6 +143,7 @@ export async function POST(request: Request) {
     const dateOfBirth = String(body.dateOfBirth || "");
     const chiefConcern = String(body.chiefConcern || "").trim();
     const intakeConfirmed = body.intakeConfirmed === true;
+    const customAnswers=body.customAnswers&&typeof body.customAnswers==="object"&&!Array.isArray(body.customAnswers)?body.customAnswers as Record<string,unknown>:{};
     const bookingType = body.bookingType === "consultation" ? "consultation" : body.bookingType === "treatment" ? "treatment" : null;
     const consentAcknowledged = staffBooking || body.consentAcknowledged === true;
     const productIds = Array.isArray(body.productIds) ? body.productIds.filter((value: unknown): value is string => typeof value === "string") : [];
@@ -208,6 +209,7 @@ export async function POST(request: Request) {
     if (primaryCategory.slug === "consultations" && (treatmentIds.length || productIds.length)) {
       return NextResponse.json({ error: "Consultation appointments cannot include treatments or package add-ons." }, { status: 400 });
     }
+    let customAnswerSnapshot:Record<string,{label:string;answer:string}>={};if(!staffBooking){const{data:customQuestions,error:questionError}=await admin.from("booking_intake_questions").select("id,label,required").is("system_key",null).eq("active",true).in("applies_to",["both",effectiveBookingType]);if(questionError)throw questionError;const missing=(customQuestions||[]).find(item=>item.required&&!String(customAnswers[item.id]||"").trim());if(missing)return NextResponse.json({error:`Please answer: ${missing.label}`},{status:400});customAnswerSnapshot=Object.fromEntries((customQuestions||[]).map(item=>[item.id,{label:item.label,answer:String(customAnswers[item.id]||"").trim()}]).filter(([,value])=>value.answer))}
     const allergies = String(body.allergies || "").trim();
     const currentMedications = String(body.currentMedications || "").trim();
     const medicalHistory = String(body.medicalHistory || "").trim();
@@ -313,6 +315,7 @@ export async function POST(request: Request) {
         pregnancy_status: pregnancyStatus,
         previous_reactions: String(body.previousReactions || "").trim() || null,
         recent_procedures: String(body.recentProcedures || "").trim() || null,
+        custom_answers:customAnswerSnapshot,
         information_confirmed_at: new Date().toISOString(),
       });
       if (intakeError) {

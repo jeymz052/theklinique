@@ -108,7 +108,7 @@ export default function SecretaryDashboard() {
           </div>
           <div className="dk-topbar-actions">
             <AppointmentNotifications appointments={appointments} onOpenSchedule={() => setView("schedule")} />
-            <DashboardAccountMenu name={displayName} role="Secretary" email={user?.email} onSignOut={signOut} signingOut={signingOut} profileHref="/dashboard/secretary?view=profile" settingsHref="/dashboard/secretary?view=settings" />
+            <DashboardAccountMenu name={displayName} role="Secretary" email={user?.email} onSignOut={signOut} signingOut={signingOut} onProfileClick={() => setView("profile")} onSettingsClick={() => setView("settings")} />
           </div>
         </header>
 

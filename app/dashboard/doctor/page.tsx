@@ -275,7 +275,7 @@ export default function DoctorDashboard() {
           </div>
           <div className="dk-topbar-actions">
             <AppointmentNotifications appointments={bookings} onOpenSchedule={() => setView("all-appts")} />
-            <DashboardAccountMenu name={doctorName} role={role === "superadmin" ? "Super Administrator" : "Attending Physician"} email={user?.email} onSignOut={handleSignOut} signingOut={signingOut} profileHref="/dashboard/doctor?view=profile" settingsHref="/dashboard/doctor?view=settings" />
+            <DashboardAccountMenu name={doctorName} role={role === "superadmin" ? "Super Administrator" : "Attending Physician"} email={user?.email} onSignOut={handleSignOut} signingOut={signingOut} onProfileClick={() => setView("profile")} onSettingsClick={() => setView("settings")} />
           </div>
         </header>
 

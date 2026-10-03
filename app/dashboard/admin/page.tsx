@@ -211,7 +211,7 @@ export default function AdminDashboard() {
             <Link href="/booking" className="dk-btn dk-btn-pink">
               <i className="fa-solid fa-plus" /> Add Appointment
             </Link>
-            <DashboardAccountMenu name={role === "doctor" ? "Doctor" : "Super Administrator"} role="Clinical leadership · Full access" email={user?.email} onSignOut={handleSignOut} signingOut={signingOut} profileHref="/dashboard/admin?view=profile" settingsHref="/dashboard/admin?view=settings" />
+            <DashboardAccountMenu name={role === "doctor" ? "Doctor" : "Super Administrator"} role="Clinical leadership · Full access" email={user?.email} onSignOut={handleSignOut} signingOut={signingOut} onProfileClick={() => setActiveTab("profile")} onSettingsClick={() => setActiveTab("settings")} />
           </div>
         </header>
 

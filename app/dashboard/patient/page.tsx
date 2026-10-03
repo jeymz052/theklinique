@@ -305,7 +305,7 @@ export default function PatientDashboard() {
           <p style={{ fontSize: "0.8rem", fontWeight: 700, color: "#0d0d0d" }}>Workspace</p>
           <div className="dk-topbar-actions">
             <AppointmentNotifications />
-            <DashboardAccountMenu name={patientDisplayName} role="Patient" email={user?.email} onSignOut={handleSignOut} signingOut={signingOut} profileHref="/dashboard/patient?view=profile" settingsHref="/dashboard/patient?view=settings" />
+            <DashboardAccountMenu name={patientDisplayName} role="Patient" email={user?.email} onSignOut={handleSignOut} signingOut={signingOut} onProfileClick={() => setView("profile")} onSettingsClick={() => setView("settings")} />
           </div>
         </header>
 

@@ -16,7 +16,7 @@ type Chart = {
   follow_up_appointment_id: string | null;
   status: "ready" | "in_progress" | "completed";
 };
-type Intake = { appointment_id: string; chief_concern: string | null; treatment_goals: string | null; allergies_snapshot: string | null; medications_snapshot: string | null; medical_history_snapshot: string | null; information_confirmed_at: string };
+type Intake = { appointment_id: string; chief_concern: string | null; treatment_goals: string | null; allergies_snapshot: string | null; medications_snapshot: string | null; medical_history_snapshot: string | null; custom_answers?:Record<string,{label:string;answer:string}>; information_confirmed_at: string };
 
 type Draft = {
   clinicalAssessment: string;
@@ -131,7 +131,7 @@ export default function ConsultationWorkspace({ appointments, onCompleted, onOpe
       </aside>
       <main>{selected ? <>
         <header><div><span className="ma-visit-pill">Consultation</span><small>{selected.referenceNo}</small><h2>{selected.patient}</h2><p>Dr. Kharyl Dence · {selected.date} at {selected.time}</p><strong>{selected.service}</strong></div><button type="button" className="dk-btn dk-btn-outline" onClick={onOpenRecords}><i className="fa-solid fa-address-card"/> Patient record</button></header>
-        {selectedIntake && <section className="cw-intake-summary"><div><p className="dk-welcome-label">Patient-confirmed intake</p><h3>{selectedIntake.chief_concern || "No concern provided"}</h3><span>Reviewed {new Date(selectedIntake.information_confirmed_at).toLocaleDateString("en-PH")}</span></div><dl><div><dt>Goals</dt><dd>{selectedIntake.treatment_goals || "Not provided"}</dd></div><div><dt>Allergies</dt><dd>{selectedIntake.allergies_snapshot || "Not provided"}</dd></div><div><dt>Medications</dt><dd>{selectedIntake.medications_snapshot || "Not provided"}</dd></div><div><dt>History</dt><dd>{selectedIntake.medical_history_snapshot || "Not provided"}</dd></div></dl></section>}
+        {selectedIntake && <section className="cw-intake-summary"><div><p className="dk-welcome-label">Patient-confirmed intake</p><h3>{selectedIntake.chief_concern || "No concern provided"}</h3><span>Reviewed {new Date(selectedIntake.information_confirmed_at).toLocaleDateString("en-PH")}</span></div><dl><div><dt>Goals</dt><dd>{selectedIntake.treatment_goals || "Not provided"}</dd></div><div><dt>Allergies</dt><dd>{selectedIntake.allergies_snapshot || "Not provided"}</dd></div><div><dt>Medications</dt><dd>{selectedIntake.medications_snapshot || "Not provided"}</dd></div><div><dt>History</dt><dd>{selectedIntake.medical_history_snapshot || "Not provided"}</dd></div>{Object.entries(selectedIntake.custom_answers||{}).map(([id,value])=><div key={id}><dt>{value.label}</dt><dd>{value.answer}</dd></div>)}</dl></section>}
         <section className="cw-form">
           <h3><i className="fa-solid fa-stethoscope"/> Assessment & consultation notes</h3>
           <label><span>Clinical assessment</span><textarea value={draft.clinicalAssessment} onChange={(event) => setDraft({ ...draft, clinicalAssessment: event.target.value })}/></label>
