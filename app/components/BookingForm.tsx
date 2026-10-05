@@ -200,7 +200,9 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
   const [intakeQuestions,setIntakeQuestions]=useState<IntakeQuestion[]>([]);
   const [customAnswers,setCustomAnswers]=useState<Record<string,string>>({});
 
-  const service     = catalogServices.find((item) => item.id === selectedService);
+  const service = catalogView === "packages"
+    ? catalogServices.find((item) => item.slug === PACKAGE_BOOKING_SERVICE_SLUG)
+    : catalogServices.find((item) => item.id === selectedService);
   const isPackageOnly = service?.slug === PACKAGE_BOOKING_SERVICE_SLUG;
   const isConsultationFollowUp = service?.slug === "follow-up-check-up" && Boolean(parentAppointmentId);
   const cartProducts = products.filter((item) => cartProductIds.includes(item.id));
@@ -459,6 +461,32 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
   const chooseTreatmentCatalog = () => {
     if (bookingType !== "treatment" || isPackageOnly) chooseBookingType("treatment");
     else setCatalogView("treatments");
+  };
+
+  const continueFromCart = async () => {
+    if (catalogView !== "packages") {
+      if (service) setStep(1);
+      return;
+    }
+    if (!cartProducts.length) return;
+    if (service) {
+      setStep(1);
+      return;
+    }
+    try {
+      const response = await fetch("/api/booking-catalog", { cache: "no-store" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Unable to refresh the package catalog.");
+      const packageService = (result.services as CatalogService[]).find((item) => item.slug === PACKAGE_BOOKING_SERVICE_SLUG);
+      if (!packageService) throw new Error("Package-only booking is not available yet. Please refresh the page.");
+      setCategories(result.categories || []);
+      setCatalogServices(result.services || []);
+      setSelectedService(packageService.id);
+      setSelectedCategory(packageService.category_id);
+      setStep(1);
+    } catch (error) {
+      setCatalogError(error instanceof Error ? error.message : "Unable to continue with this package booking.");
+    }
   };
 
   function proceedToReview() {
@@ -758,7 +786,7 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
                     {packageTotal > 0 && <div><span>Packages</span><strong>₱{packageTotal.toLocaleString()}</strong></div>}
                     <div className="bk-cart-grand"><span>Estimated total</span><strong>₱{grandTotal.toLocaleString()}</strong></div>
                   </div>
-                  <button type="button" className="bk-cart-checkout" disabled={!service || (isPackageOnly && cartProducts.length === 0)} onClick={() => setStep(1)}><span>Continue</span><i className="fa-solid fa-arrow-right" /></button>
+                  <button type="button" className="bk-cart-checkout" disabled={catalogView === "packages" ? cartProducts.length === 0 : !service} onClick={() => void continueFromCart()}><span>Continue</span><i className="fa-solid fa-arrow-right" /></button>
                   <p className="bk-cart-caption"><i className="fa-solid fa-shield-heart" /> Final eligibility is confirmed by the doctor.</p>
                 </>}
               </aside>}
