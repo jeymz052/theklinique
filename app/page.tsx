@@ -27,6 +27,7 @@ export default function Home() {
   const [bookingOpen, setBookingOpen] = useState(false);
   const [bookingCategoryHint, setBookingCategoryHint] = useState<string | null>(null);
   const [bookingServiceSlug, setBookingServiceSlug] = useState<string | null>(null);
+  const [bookingCatalogView, setBookingCatalogView] = useState<"treatments" | "packages">("treatments");
   const [menuOpen, setMenuOpen] = useState(false);
   const [compactViewport, setCompactViewport] = useState(false);
   const [landingPackages, setLandingPackages] = useState<LandingPackage[]>([]);
@@ -38,8 +39,15 @@ export default function Home() {
   const heroMedia = content?.heroMedia || [];
   const activeHeroSlide = heroMedia.length ? heroSlide % heroMedia.length : 0;
   const openBooking = (categoryHint: string | null = null) => {
+    setBookingCatalogView("treatments");
     setBookingServiceSlug(null);
     setBookingCategoryHint(categoryHint);
+    setBookingOpen(true);
+  };
+  const openPackageBooking = () => {
+    setBookingCatalogView("packages");
+    setBookingServiceSlug(null);
+    setBookingCategoryHint(null);
     setBookingOpen(true);
   };
 
@@ -134,6 +142,12 @@ export default function Home() {
 
   const navigationOrder=(content?.navigationOrder||DEFAULT_NAVIGATION_ORDER).filter(key=>LANDING_NAV[key]),primaryNavigation=navigationOrder.slice(0,4),moreNavigation=navigationOrder.slice(4);
   const sectionOrder=(key:ContentTab,offset=0)=>100+navigationOrder.indexOf(key)*10+offset;
+  const landingPackageTypes = Array.from(landingPackages.reduce((groups, item) => {
+    const key = item.category.trim();
+    const current = groups.get(key);
+    groups.set(key, current ? { ...current, count: current.count + 1, fromPrice: Math.min(current.fromPrice, Number(item.price)) } : { category: key, count: 1, fromPrice: Number(item.price) });
+    return groups;
+  }, new Map<string, { category: string; count: number; fromPrice: number }>()).values());
   return (
     <div className={`landing-page ${compactViewport ? "landing-page--compact" : ""}`}>
       {/* ── BOOKING MODAL ── */}
@@ -143,10 +157,10 @@ export default function Home() {
           role="dialog"
           aria-modal="true"
           aria-label="Book an Appointment"
-          onClick={(e) => { if (e.target === e.currentTarget) { setBookingOpen(false); setBookingCategoryHint(null); } }}
+          onClick={(e) => { if (e.target === e.currentTarget) { setBookingOpen(false); setBookingCategoryHint(null); setBookingCatalogView("treatments"); } }}
         >
           <div className="bk-modal-sheet">
-            <BookingForm key={bookingServiceSlug || bookingCategoryHint || "all-services"} isModal initialServiceSlug={bookingServiceSlug} initialCategoryHint={bookingCategoryHint} onClose={() => { setBookingOpen(false); setBookingCategoryHint(null); setBookingServiceSlug(null); }} />
+            <BookingForm key={`${bookingCatalogView}-${bookingServiceSlug || bookingCategoryHint || "all-services"}`} isModal initialServiceSlug={bookingServiceSlug} initialCategoryHint={bookingCategoryHint} initialCatalogView={bookingCatalogView} onClose={() => { setBookingOpen(false); setBookingCategoryHint(null); setBookingServiceSlug(null); setBookingCatalogView("treatments"); }} />
           </div>
         </div>
       )}
@@ -323,7 +337,7 @@ export default function Home() {
             { image: "/images/lasers.png", alt: "Laser skin treatments", name: "Lasers", tagline: "Clearer Skin. Brighter You." },
           ]).slice(0,showAllServices?undefined:4).map((service,index) => {const hint=service.name.toLowerCase(),aliases=hint.includes("botox")?["botox","neurotoxin"]:hint.includes("filler")?["filler"]:hint.includes("skin booster")?["skin booster"]:hint.includes("laser")?["laser"]:[hint];const relatedCategory=landingCategories.find(category=>aliases.some(alias=>`${category.name} ${category.slug}`.toLowerCase().replaceAll("-"," ").includes(alias)));const article=blogPosts.find(post=>post.service_category_id===relatedCategory?.id);return <article key={`${service.name}-${index}`} className="service-card">{service.image?<img className="service-card-img" src={service.image} alt={service.alt||service.name} style={{width:"100%",height:"auto",aspectRatio:"3/4",objectFit:"cover"}}/>:<div className="service-card-img service-card-placeholder"><i className="fa-solid fa-spa"/></div>}<div className="service-card-overlay"/><div className="service-card-content"><p className="service-card-name">{service.name}</p><p className="service-card-tagline">{service.tagline}</p><div className="service-card-actions"><button type="button" onClick={()=>openBooking(relatedCategory?.name||service.name)}><i className="fa-solid fa-calendar-plus"/> Book appointment</button><Link href={article?`/blog/${article.slug}`:"/blog"}><i className="fa-regular fa-file-lines"/> View details</Link></div></div></article>})}
         </div>
-        <div className="landing-packages-block"><div className="landing-packages-copy"><p className="section-label">Clinic Packages</p><h3>Plans for consistent care</h3><p>Ask the clinic about package eligibility, inclusions, and scheduling.</p><button type="button" onClick={() => setBookingOpen(true)}>Book with a package <i className="fa-solid fa-arrow-right" /></button></div><div className="landing-package-list">{(landingPackages.length ? landingPackages.slice(0, 6) : [{ id: "underarms", name: "Underarms", description: "Unlimited diode laser hair removal for one year.", price: 12000, category: "Laser Hair Removal" }, { id: "lip", name: "Upper / Lower Lip", description: "Unlimited diode laser hair removal for one year.", price: 10000, category: "Laser Hair Removal" }, { id: "bikini", name: "Bikini Lines", description: "Unlimited diode laser hair removal for one year.", price: 12000, category: "Laser Hair Removal" }]).map((item) => {const relatedCategory=landingCategories.find(category=>{const haystack=`${category.name} ${category.slug}`.toLowerCase().replaceAll("-"," "),needle=item.category.toLowerCase();return haystack.includes(needle)||needle.includes(haystack)}),article=blogPosts.find(post=>post.service_category_id===relatedCategory?.id);return <article key={item.id}><span><i className="fa-solid fa-box-open" /></span><div><small>{item.category}</small><h4>{item.name}</h4><p>{item.description}</p><div className="landing-package-actions"><button type="button" onClick={()=>openBooking(item.category)}><i className="fa-solid fa-calendar-plus"/> Book</button>{article?<Link href={`/blog/${article.slug}`}>View details <i className="fa-solid fa-arrow-right"/></Link>:<Link href="/blog">View details <i className="fa-solid fa-arrow-right"/></Link>}</div></div><strong>PHP {Number(item.price).toLocaleString()}</strong></article>})}</div></div>
+        <div className="landing-packages-block"><div className="landing-packages-copy"><p className="section-label">Glow Plans</p><h3>Plans for consistent care</h3><p>Explore our package types, then choose the plan that fits your goals in the booking catalog.</p><button type="button" onClick={openPackageBooking}>Book a Package <i className="fa-solid fa-arrow-right" /></button></div><div className="landing-package-list">{(landingPackageTypes.length ? landingPackageTypes : [{ category: "Laser Hair Removal", count: 1, fromPrice: 10000 }, { category: "RF Treatments", count: 1, fromPrice: 0 }]).slice(0,6).map((item) => {const relatedCategory=landingCategories.find(category=>{const haystack=`${category.name} ${category.slug}`.toLowerCase().replaceAll("-"," "),needle=item.category.toLowerCase();return haystack.includes(needle)||needle.includes(haystack)}),article=blogPosts.find(post=>post.service_category_id===relatedCategory?.id);return <article key={item.category}><span><i className="fa-solid fa-box-open" /></span><div><small>Package type</small><h4>{item.category}</h4><p>{item.count} Glow Plan{item.count === 1 ? "" : "s"} available</p><div className="landing-package-actions"><button type="button" onClick={openPackageBooking}><i className="fa-solid fa-calendar-plus"/> Book</button>{article?<Link href={`/blog/${article.slug}`}>View details <i className="fa-solid fa-arrow-right"/></Link>:<Link href="/blog">View details <i className="fa-solid fa-arrow-right"/></Link>}</div></div>{item.fromPrice > 0 && <strong>From PHP {item.fromPrice.toLocaleString()}</strong>}</article>})}</div></div>
       </section>
 
       {/* ── MOVING RESULTS GALLERY ── */}
@@ -418,7 +432,7 @@ function LandingResultsBoard({items,eyebrow,title,description,badge,order}:{item
   return <section className="landing-media-gallery landing-results-board" id="gallery" style={{order}}>
     <header><div><p className="section-label">{eyebrow||"Before & After"}</p><h2>{title||"Featured Results"}</h2><span>{description||"Aesthetic transformations and clinic stories."}</span></div><strong>{badge||"Results Board"}</strong></header>
     <div className="landing-results-viewport"><div className={`landing-results-track ${items.length===1?"is-single":""}`}>
-      {[...items,...items].map((item,index)=>{const originalIndex=index%items.length;const duplicate=index>=items.length;return <article className="landing-result-card" key={`${duplicate?"copy":"original"}-${item.url}-${originalIndex}`} aria-hidden={duplicate||undefined}><header><div><span>Aesthetic Results</span><h3>{item.alt||`Featured result ${originalIndex+1}`}</h3></div><small>Case {String(originalIndex+1).padStart(2,"0")}</small></header><div className="landing-result-media">{item.type==="video"?<video src={item.url} controls={!duplicate} autoPlay muted loop playsInline/>:<img src={item.url} alt={duplicate?"":item.alt}/>}</div></article>})}
+      {[...items,...items].map((item,index)=>{const originalIndex=index%items.length;const duplicate=index>=items.length;return <article className="landing-result-card" key={`${duplicate?"copy":"original"}-${item.url}-${originalIndex}`} aria-hidden={duplicate||undefined}><header><div><span>Aesthetic Results</span><h3>{item.title?.trim()||`Featured result ${originalIndex+1}`}</h3></div><small>Case {String(originalIndex+1).padStart(2,"0")}</small></header><div className="landing-result-media">{item.type==="video"?<video src={item.url} controls={!duplicate} autoPlay muted loop playsInline/>:<img src={item.url} alt={duplicate?"":item.alt}/>}</div></article>})}
     </div></div>
     <p className="landing-results-note"><i className="fa-solid fa-arrows-left-right"/> Results move continuously. Hover or focus to pause.</p>
   </section>;

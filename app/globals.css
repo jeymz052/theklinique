@@ -4862,6 +4862,9 @@ body:has(.landing-page) { background: #f8e1e1 url('/images/footerbg.png') center
 .bk-cart-totals .bk-cart-grand strong { color: #b54666; font-size: 0.78rem; }
 .bk-cart-checkout { width: calc(100% - 1.5rem); min-height: 42px; display: flex; align-items: center; justify-content: space-between; margin: 0.7rem 0.75rem 0.45rem; padding: 0.65rem 0.8rem; border: 0; border-radius: 8px; background: #bd5874; color: #fff; font: 700 0.66rem 'Jost', sans-serif; cursor: pointer; box-shadow: 0 6px 14px rgba(173,65,95,0.18); }
 .bk-cart-checkout:hover { background: #a84764; }
+.bk-cart-checkout:disabled { cursor: not-allowed; opacity: .48; }
+.bk-cart-requirement { display: flex; gap: .35rem; margin: .65rem .75rem 0; padding: .55rem .6rem; border-radius: 7px; background: #fff6e8; color: #85632e; font-size: .54rem; line-height: 1.4; }
+.bk-package-catalog .bk-catalog-card-icon { background: #fff3dc; color: #a87327; }
 .bk-cart-caption { display: flex; align-items: center; justify-content: center; gap: 0.28rem; padding: 0 0.7rem 0.7rem; color: #a28790; font-size: 0.49rem; text-align: center; }
 
 @media (max-width: 980px) {
@@ -4876,7 +4879,7 @@ body:has(.landing-page) { background: #f8e1e1 url('/images/footerbg.png') center
 }
 
 /* Booking type decision: consultation vs full treatment cart */
-.bk-booking-mode { grid-column: 1 / -1 !important; grid-row: 1; display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 0.7rem; margin-bottom: 0.9rem; }
+.bk-booking-mode { grid-column: 1 / -1 !important; grid-row: 1; display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 0.7rem; margin-bottom: 0.9rem; }
 .bk-booking-mode > button { position: relative; display: grid; grid-template-columns: 42px minmax(0,1fr) auto; align-items: center; gap: 0.7rem; min-height: 104px; padding: 0.85rem; border: 1.5px solid #ead8de; border-radius: 11px; background: #fff; color: #57464b; cursor: pointer; text-align: left; transition: border-color .16s, background .16s, box-shadow .16s; }
 .bk-booking-mode > button:hover { border-color: #d99aab; background: #fffafb; }
 .bk-booking-mode > button:disabled { cursor: wait; opacity: .58; }
@@ -5562,6 +5565,9 @@ body:has(.landing-page) { background: #f8e1e1 url('/images/footerbg.png') center
 .website-media-list .website-media-actions button { position:static; width:28px; height:28px; border:1px solid #eadce1; border-radius:7px; background:#fff; color:#825e6a; cursor:pointer; }
 .website-media-list .website-media-actions button.remove { margin-left:auto; color:#b13f60; }
 .website-media-list .website-media-actions button:disabled { opacity:.3; cursor:not-allowed; }
+.website-media-title { display:grid; gap:.3rem; padding:.55rem; color:#68535b; font-size:.52rem; font-weight:800; cursor:text; }
+.website-media-title input { width:100%; min-height:34px; padding:.45rem .5rem; border:1px solid #e4d5da; border-radius:7px; background:#fff; color:#46363c; font:600 .58rem 'Jost',sans-serif; outline:none; }
+.website-media-title input:focus { border-color:#c45172; box-shadow:0 0 0 3px rgba(196,81,114,.1); }
 .taxonomy-color { display:grid; place-items:center; width:30px; height:30px; overflow:hidden; border:1px solid #ead8de; border-radius:7px; background:#fff; cursor:pointer; }
 .taxonomy-color input { width:38px; height:38px; padding:0; border:0; cursor:pointer; }
 .dk-modal-help { margin:-.2rem 0 .8rem; color:#7c656e; font-size:.68rem; }

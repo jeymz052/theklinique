@@ -119,6 +119,7 @@ const BOOKING_DRAFT_KEY = "theklinique.booking-draft.v1";
 
 type BookingPolicy = "terms" | "cancellation";
 type BookingType = "consultation" | "treatment";
+type CatalogView = "treatments" | "packages";
 type IntakeQuestion={id:string;system_key:string|null;label:string;placeholder:string;input_type:"text"|"textarea"|"yes_no";applies_to:"both"|"consultation"|"treatment";required:boolean;active:boolean;sort_order:number};
 
 function BookingPolicyModal({ type, onClose }: { type: BookingPolicy; onClose: () => void }) {
@@ -149,19 +150,21 @@ interface BookingFormProps {
   onClose?: () => void;
   initialServiceSlug?: string | null;
   initialCategoryHint?: string | null;
+  initialCatalogView?: CatalogView;
   parentAppointmentId?: string | null;
 }
 
 /* ═══════════════════════════════════════════════════════════
    BookingForm
 ═══════════════════════════════════════════════════════════ */
-export default function BookingForm({ isModal = false, embedded = false, onClose, initialServiceSlug = null, initialCategoryHint = null, parentAppointmentId = null }: BookingFormProps) {
+export default function BookingForm({ isModal = false, embedded = false, onClose, initialServiceSlug = null, initialCategoryHint = null, initialCatalogView = "treatments", parentAppointmentId = null }: BookingFormProps) {
   const router = useRouter();
   const today = new Date();
 
   /* ── State ── */
   const [step, setStep]                   = useState(0);
-  const [bookingType, setBookingType]     = useState<BookingType | null>(null);
+  const [bookingType, setBookingType]     = useState<BookingType | null>(initialCatalogView === "packages" ? "treatment" : null);
+  const [catalogView, setCatalogView]     = useState<CatalogView>(initialCatalogView);
   const [selectedService, setSelectedService] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [categories, setCategories]       = useState<Category[]>([]);
@@ -304,7 +307,8 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
           const savedStep = Math.min(Math.max(Number(draft.step) || 0, 0), 3);
           setStep(savedStep === 3 && draft.authenticated !== true ? 2 : savedStep);
           setResumeReviewAfterAuth(draft.resumeReviewAfterAuth === true);
-          setBookingType(draft.bookingType === "consultation" || draft.bookingType === "treatment" ? draft.bookingType : null);
+          setBookingType(initialCatalogView === "packages" ? "treatment" : draft.bookingType === "consultation" || draft.bookingType === "treatment" ? draft.bookingType : null);
+          setCatalogView(initialCatalogView === "packages" ? "packages" : draft.catalogView === "packages" ? "packages" : "treatments");
           setSelectedService(typeof draft.selectedService === "string" ? draft.selectedService : null);
           setSelectedCategory(typeof draft.selectedCategory === "string" ? draft.selectedCategory : null);
           setCartProductIds(Array.isArray(draft.cartProductIds) ? draft.cartProductIds : []);
@@ -324,8 +328,8 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
 
   useEffect(() => {
     if (!draftRestored) return;
-    window.localStorage.setItem(BOOKING_DRAFT_KEY, JSON.stringify({ step, bookingType, selectedService, selectedCategory, cartProductIds, cartTreatmentIds, form, selectedDate, selectedTime, authenticated: isSignedIn, resumeReviewAfterAuth }));
-  }, [bookingType, cartProductIds, cartTreatmentIds, draftRestored, form, isSignedIn, resumeReviewAfterAuth, selectedCategory, selectedDate, selectedService, selectedTime, step]);
+    window.localStorage.setItem(BOOKING_DRAFT_KEY, JSON.stringify({ step, bookingType, catalogView, selectedService, selectedCategory, cartProductIds, cartTreatmentIds, form, selectedDate, selectedTime, authenticated: isSignedIn, resumeReviewAfterAuth }));
+  }, [bookingType, cartProductIds, cartTreatmentIds, catalogView, draftRestored, form, isSignedIn, resumeReviewAfterAuth, selectedCategory, selectedDate, selectedService, selectedTime, step]);
 
   useEffect(() => {
     if (!draftRestored || !authResolved || !isSignedIn || !resumeReviewAfterAuth) return;
@@ -418,6 +422,7 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
 
   const chooseBookingType = (type: BookingType) => {
     setBookingType(type);
+    setCatalogView("treatments");
     setCartTreatmentIds([]);
     setCartProductIds([]);
     if (type === "consultation") {
@@ -429,6 +434,22 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
       setSelectedCategory(null);
       setSelectedService(null);
     }
+  };
+
+  const choosePackageCatalog = () => {
+    if (bookingType !== "treatment") {
+      setSelectedService(null);
+      setCartTreatmentIds([]);
+      setCartProductIds([]);
+    }
+    setBookingType("treatment");
+    setCatalogView("packages");
+    setSelectedCategory(null);
+  };
+
+  const chooseTreatmentCatalog = () => {
+    if (bookingType !== "treatment") chooseBookingType("treatment");
+    else setCatalogView("treatments");
   };
 
   function proceedToReview() {
@@ -649,12 +670,15 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
                 <button type="button" disabled={!categories.length || !catalogServices.length} className={bookingType === "consultation" ? "selected" : ""} onClick={() => chooseBookingType("consultation")}>
                   <span><i className="fa-solid fa-user-doctor" /></span><div><small>Assessment only</small><strong>Consultation</strong><p>Meet Dr. Kharyl for evaluation and a personalized treatment plan.</p></div><i className="fa-solid fa-chevron-right" />
                 </button>
-                <button type="button" disabled={!categories.length || !catalogServices.length} className={bookingType === "treatment" ? "selected" : ""} onClick={() => chooseBookingType("treatment")}>
+                <button type="button" disabled={!categories.length || !catalogServices.length} className={bookingType === "treatment" && catalogView === "treatments" ? "selected" : ""} onClick={chooseTreatmentCatalog}>
                   <span><i className="fa-solid fa-syringe" /></span><div><small>Book procedures</small><strong>Medical Treatment</strong><p>Select one or more treatments and add them to your appointment cart.</p></div><i className="fa-solid fa-chevron-right" />
+                </button>
+                <button type="button" disabled={!products.length} className={bookingType === "treatment" && catalogView === "packages" ? "selected" : ""} onClick={choosePackageCatalog}>
+                  <span><i className="fa-solid fa-gift" /></span><div><small>Book a package</small><strong>Glow Plans (Packages)</strong><p>Browse clinic packages and add your preferred plan to the appointment cart.</p></div><i className="fa-solid fa-chevron-right" />
                 </button>
               </div>
 
-              {bookingType === "treatment" && <section className="bk-treatment-catalog">
+              {bookingType === "treatment" && catalogView === "treatments" && <section className="bk-treatment-catalog">
                 <div className="bk-treatment-catalog-head"><div><span className="bk-label"><i className="fa-solid fa-kit-medical" /> Treatment catalog</span><p>Add one or more procedures to your appointment.</p></div><span>{cartTreatments.length + (service ? 1 : 0)} selected</span></div>
                 <div className="bk-category-chips" role="group" aria-label="Filter treatment categories">
                   <button type="button" className={!selectedCategory ? "active" : ""} onClick={() => setSelectedCategory(null)}>All treatments</button>
@@ -672,6 +696,19 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
                   })}
                 </div>
               </section>}
+              {bookingType === "treatment" && catalogView === "packages" && <section className="bk-treatment-catalog bk-package-catalog">
+                <div className="bk-treatment-catalog-head"><div><span className="bk-label"><i className="fa-solid fa-gift" /> Glow Plans (Packages)</span><p>Select one or more packages for your appointment.</p></div><span>{cartProducts.length} selected</span></div>
+                <div className="bk-catalog-card-grid">
+                  {products.map((product) => {
+                    const selected = cartProductIds.includes(product.id);
+                    return <article key={product.id} className={`bk-catalog-card ${selected ? "selected" : ""}`}>
+                      <div className="bk-catalog-card-icon"><i className="fa-solid fa-wand-magic-sparkles" /></div>
+                      <div className="bk-catalog-card-copy"><small>{product.category} · {product.subcategory}</small><strong>{product.name}</strong>{product.description && <p>{product.description}</p>}<span><b>PHP {Number(product.price).toLocaleString()}</b></span></div>
+                      <button type="button" className={selected ? "is-added" : ""} onClick={() => toggleProduct(product.id)}>{selected ? <><i className="fa-solid fa-check" /> In cart</> : <><i className="fa-solid fa-plus" /> Add</>}</button>
+                    </article>;
+                  })}
+                </div>
+              </section>}
               {service && bookingType === "consultation" && (
                 <div className="bk-selected-service bk-selected-service-summary">
                   <div><small className="bk-primary-label"><i className="fa-solid fa-star" /> Primary treatment</small><strong>{service.name}</strong>{service.description && <p>{service.description}</p>}</div>
@@ -682,31 +719,19 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
               {service && (isConsultationOnly ? (
                 <div className="bk-consult-only"><i className="fa-solid fa-stethoscope" /><div><strong>Consultation-only appointment</strong><p>No cart or add-ons. This visit is reserved exclusively for assessment and treatment planning.</p><button type="button" onClick={() => setStep(1)}>Continue with consultation <i className="fa-solid fa-arrow-right" /></button></div></div>
               ) : null)}
-              {products.length > 0 && service && !isConsultationOnly && (
-                <details className="bk-package-drawer">
-                  <summary><span><i className="fa-solid fa-gift" /> Optional packages</span><span className="bk-cart-count">{cartProducts.length} in cart</span></summary>
-                  <div className="bk-products-grid">
-                    {products.map((product) => {
-                      const selected = cartProductIds.includes(product.id);
-                      return <div key={product.id} className={`bk-product-card ${selected ? "selected" : ""}`}><div><small>{product.category} · {product.subcategory}</small><strong>{product.name}</strong><span>PHP {Number(product.price).toLocaleString()}</span>{product.description && <p>{product.description}</p>}</div><button type="button" onClick={() => toggleProduct(product.id)}>{selected ? "Remove" : "Add"}</button></div>;
-                    })}
-                  </div>
-                </details>
-              )}
-
               {bookingType === "treatment" && <aside className="bk-cart-panel" aria-label="Appointment cart">
                 <div className="bk-cart-panel-head">
                   <div className="bk-cart-title"><span><i className="fa-solid fa-cart-shopping" /></span><div><strong>Your appointment cart</strong><small>{cartItemCount} item{cartItemCount === 1 ? "" : "s"}</small></div></div>
-                  {service && <button type="button" className="bk-cart-clear" onClick={clearCart}>Clear</button>}
+                  {cartItemCount > 0 && <button type="button" className="bk-cart-clear" onClick={clearCart}>Clear</button>}
                 </div>
 
-                {!service ? <div className="bk-cart-empty"><i className="fa-solid fa-basket-shopping" /><strong>Your cart is empty</strong><p>Browse the treatment categories and add procedures to begin.</p></div> : <>
+                {cartItemCount === 0 ? <div className="bk-cart-empty"><i className="fa-solid fa-basket-shopping" /><strong>Your cart is empty</strong><p>Browse treatments or Glow Plans and add an item to begin.</p></div> : <>
                   <div className="bk-cart-lines">
-                    <div className="bk-cart-line bk-cart-line--primary">
+                    {service && <div className="bk-cart-line bk-cart-line--primary">
                       <span className="bk-cart-line-icon"><i className="fa-solid fa-star" /></span>
                       <div><small>First treatment</small><strong>{service.name}</strong>{service.duration_mins && <span>{service.duration_mins} min</span>}</div>
                       <strong>₱{Number(service.price).toLocaleString()}</strong>
-                    </div>
+                    </div>}
                     {cartTreatments.map((item) => <div className="bk-cart-line" key={item.id}>
                       <span className="bk-cart-line-icon"><i className={`fa-solid ${treatmentIcon(item)}`} /></span>
                       <div><small>Added treatment</small><strong>{item.name}</strong>{item.duration_mins && <span>{item.duration_mins} min</span>}</div>
@@ -724,7 +749,8 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
                     {packageTotal > 0 && <div><span>Packages</span><strong>₱{packageTotal.toLocaleString()}</strong></div>}
                     <div className="bk-cart-grand"><span>Estimated total</span><strong>₱{grandTotal.toLocaleString()}</strong></div>
                   </div>
-                  <button type="button" className="bk-cart-checkout" onClick={() => setStep(1)}><span>Continue</span><i className="fa-solid fa-arrow-right" /></button>
+                  {!service && <p className="bk-cart-requirement"><i className="fa-solid fa-circle-info" /> Choose a medical treatment before continuing with a package booking.</p>}
+                  <button type="button" className="bk-cart-checkout" disabled={!service} onClick={() => setStep(1)}><span>Continue</span><i className="fa-solid fa-arrow-right" /></button>
                   <p className="bk-cart-caption"><i className="fa-solid fa-shield-heart" /> Final eligibility is confirmed by the doctor.</p>
                 </>}
               </aside>}
