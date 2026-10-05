@@ -253,7 +253,15 @@ export async function POST(request: Request) {
       if (treatmentCategoriesError) throw treatmentCategoriesError;
       if ((treatmentCategories || []).some((category) => category.slug === "consultations")) return NextResponse.json({ error: "Consultations cannot be added to a treatment cart." }, { status: 400 });
     }
+    const { data: selectedProducts, error: productsError } = productIds.length
+      ? await admin.from("products").select("id, price").in("id", productIds).eq("is_active", true)
+      : { data: [], error: null };
+    if (productsError) throw productsError;
+    if ((selectedProducts || []).length !== new Set(productIds).size) return NextResponse.json({ error: "One or more selected packages are unavailable." }, { status: 400 });
+    const packageOnly = serviceSlug === "glow-plans-package-booking";
+    if (packageOnly && !selectedProducts?.length) return NextResponse.json({ error: "Choose at least one Glow Plan package." }, { status: 400 });
     const treatmentTotal = Number(service.price) + additionalTreatments.reduce((sum, item) => sum + Number(item.price), 0);
+    const packageTotal = (selectedProducts || []).reduce((sum, product) => sum + Number(product.price), 0);
 
     const clientResult = staffBooking && existingClient ? { data: existingClient, error: null } : await admin
       .from("clients")
@@ -289,7 +297,7 @@ export async function POST(request: Request) {
         service_id: service.id,
         appointment_date: appointmentDate,
         appointment_time: appointmentTime,
-        total_amount: treatmentTotal,
+        total_amount: packageOnly ? packageTotal : treatmentTotal,
         status: staffBooking ? "confirmed" : "pending",
         payment_expires_at: staffBooking ? null : new Date(Date.now() + PAYMENT_HOLD_MINUTES * 60_000).toISOString(),
         notes: notes || null,
@@ -357,15 +365,9 @@ export async function POST(request: Request) {
       if (linkError) throw linkError;
     }
 
-    if (productIds.length) {
-      const { data: products, error: productsError } = await admin
-        .from("products")
-        .select("id, price")
-        .in("id", productIds)
-        .eq("is_active", true);
-      if (productsError) throw productsError;
-      const totalAmount = (products || []).reduce((sum, product) => sum + Number(product.price), 0);
-      if (products?.length) {
+    if (selectedProducts?.length) {
+      const totalAmount = selectedProducts.reduce((sum, product) => sum + Number(product.price), 0);
+      if (selectedProducts.length) {
         const { data: orderReference, error: orderReferenceError } = await admin.rpc("generate_order_ref");
         if (orderReferenceError || !orderReference) throw orderReferenceError || new Error("Unable to create package order.");
         const { data: order, error: orderError } = await admin
@@ -374,7 +376,7 @@ export async function POST(request: Request) {
           .select("id")
           .single();
         if (orderError || !order) throw orderError || new Error("Unable to create package order.");
-        const { error: itemsError } = await admin.from("order_items").insert(products.map((product) => ({ order_id: order.id, product_id: product.id, quantity: 1, unit_price: product.price })));
+        const { error: itemsError } = await admin.from("order_items").insert(selectedProducts.map((product) => ({ order_id: order.id, product_id: product.id, quantity: 1, unit_price: product.price })));
         if (itemsError) throw itemsError;
       }
     }

@@ -116,6 +116,7 @@ const STEPS = [
 ];
 
 const BOOKING_DRAFT_KEY = "theklinique.booking-draft.v1";
+const PACKAGE_BOOKING_SERVICE_SLUG = "glow-plans-package-booking";
 
 type BookingPolicy = "terms" | "cancellation";
 type BookingType = "consultation" | "treatment";
@@ -200,16 +201,17 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
   const [customAnswers,setCustomAnswers]=useState<Record<string,string>>({});
 
   const service     = catalogServices.find((item) => item.id === selectedService);
+  const isPackageOnly = service?.slug === PACKAGE_BOOKING_SERVICE_SLUG;
   const isConsultationFollowUp = service?.slug === "follow-up-check-up" && Boolean(parentAppointmentId);
   const cartProducts = products.filter((item) => cartProductIds.includes(item.id));
   const cartTreatments = catalogServices.filter((item) => cartTreatmentIds.includes(item.id));
-  const bookedTreatments = service ? [service, ...cartTreatments] : [];
+  const bookedTreatments = service && !isPackageOnly ? [service, ...cartTreatments] : [];
   const selectedCategoryRecord = categories.find((item) => item.id === service?.category_id);
   const isConsultationOnly = selectedCategoryRecord?.slug === "consultations";
-  const visibleTreatmentServices = catalogServices.filter((item) => categories.find((category) => category.id === item.category_id)?.slug !== "consultations" && (!selectedCategory || item.category_id === selectedCategory));
-  const treatmentTotal = (service?.price || 0) + cartTreatments.reduce((sum, item) => sum + Number(item.price), 0);
+  const visibleTreatmentServices = catalogServices.filter((item) => item.slug !== PACKAGE_BOOKING_SERVICE_SLUG && categories.find((category) => category.id === item.category_id)?.slug !== "consultations" && (!selectedCategory || item.category_id === selectedCategory));
+  const treatmentTotal = (isPackageOnly ? 0 : service?.price || 0) + cartTreatments.reduce((sum, item) => sum + Number(item.price), 0);
   const packageTotal = cartProducts.reduce((sum, item) => sum + Number(item.price), 0);
-  const cartItemCount = (service ? 1 : 0) + cartTreatments.length + cartProducts.length;
+  const cartItemCount = (service && !isPackageOnly ? 1 : 0) + cartTreatments.length + cartProducts.length;
   const grandTotal = treatmentTotal + packageTotal;
   const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
   const firstDay    = new Date(calYear, calMonth, 1).getDay();
@@ -227,7 +229,14 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
         setCategories(result.categories);
         setCatalogServices(result.services);
         setProducts(result.products);
-        if (initialServiceSlug) {
+        if (initialCatalogView === "packages") {
+          const packageService = (result.services as CatalogService[]).find((item) => item.slug === PACKAGE_BOOKING_SERVICE_SLUG);
+          setBookingType("treatment");
+          setCatalogView("packages");
+          setSelectedService(packageService?.id || null);
+          setSelectedCategory(packageService?.category_id || null);
+          setCartTreatmentIds([]);
+        } else if (initialServiceSlug) {
           const initialService = (result.services as CatalogService[]).find((item) => item.slug === initialServiceSlug);
           const initialCategory = (result.categories as Category[]).find((item) => item.id === initialService?.category_id);
           if (initialService && initialCategory?.slug === "consultations") {
@@ -263,7 +272,7 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
         setProducts(FALLBACK_CATALOG.products);
         setCatalogError(error instanceof Error ? error.message : "Showing a limited treatment list.");
       });
-  }, [initialCategoryHint, initialServiceSlug]);
+  }, [initialCatalogView, initialCategoryHint, initialServiceSlug]);
 
   useEffect(() => {
     let active = true;
@@ -309,8 +318,10 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
           setResumeReviewAfterAuth(draft.resumeReviewAfterAuth === true);
           setBookingType(initialCatalogView === "packages" ? "treatment" : draft.bookingType === "consultation" || draft.bookingType === "treatment" ? draft.bookingType : null);
           setCatalogView(initialCatalogView === "packages" ? "packages" : draft.catalogView === "packages" ? "packages" : "treatments");
-          setSelectedService(typeof draft.selectedService === "string" ? draft.selectedService : null);
-          setSelectedCategory(typeof draft.selectedCategory === "string" ? draft.selectedCategory : null);
+          if (initialCatalogView !== "packages") {
+            setSelectedService(typeof draft.selectedService === "string" ? draft.selectedService : null);
+            setSelectedCategory(typeof draft.selectedCategory === "string" ? draft.selectedCategory : null);
+          }
           setCartProductIds(Array.isArray(draft.cartProductIds) ? draft.cartProductIds : []);
           setCartTreatmentIds(Array.isArray(draft.cartTreatmentIds) ? draft.cartTreatmentIds : []);
           setForm((current) => ({ ...current, ...(draft.form || {}) }));
@@ -324,7 +335,7 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
       }
     });
     return () => window.cancelAnimationFrame(frame);
-  }, []);
+  }, [initialCatalogView]);
 
   useEffect(() => {
     if (!draftRestored) return;
@@ -437,18 +448,16 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
   };
 
   const choosePackageCatalog = () => {
-    if (bookingType !== "treatment") {
-      setSelectedService(null);
-      setCartTreatmentIds([]);
-      setCartProductIds([]);
-    }
+    const packageService = catalogServices.find((item) => item.slug === PACKAGE_BOOKING_SERVICE_SLUG);
     setBookingType("treatment");
     setCatalogView("packages");
-    setSelectedCategory(null);
+    setSelectedService(packageService?.id || null);
+    setSelectedCategory(packageService?.category_id || null);
+    setCartTreatmentIds([]);
   };
 
   const chooseTreatmentCatalog = () => {
-    if (bookingType !== "treatment") chooseBookingType("treatment");
+    if (bookingType !== "treatment" || isPackageOnly) chooseBookingType("treatment");
     else setCatalogView("treatments");
   };
 
@@ -682,7 +691,7 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
                 <div className="bk-treatment-catalog-head"><div><span className="bk-label"><i className="fa-solid fa-kit-medical" /> Treatment catalog</span><p>Add one or more procedures to your appointment.</p></div><span>{cartTreatments.length + (service ? 1 : 0)} selected</span></div>
                 <div className="bk-category-chips" role="group" aria-label="Filter treatment categories">
                   <button type="button" className={!selectedCategory ? "active" : ""} onClick={() => setSelectedCategory(null)}>All treatments</button>
-                  {categories.filter((category) => category.slug !== "consultations").map((category) => <button type="button" key={category.id} className={selectedCategory === category.id ? "active" : ""} onClick={() => setSelectedCategory(category.id)}>{category.name}</button>)}
+                  {categories.filter((category) => !["consultations", "package-bookings"].includes(category.slug)).map((category) => <button type="button" key={category.id} className={selectedCategory === category.id ? "active" : ""} onClick={() => setSelectedCategory(category.id)}>{category.name}</button>)}
                 </div>
                 <div className="bk-catalog-card-grid">
                   {visibleTreatmentServices.map((item) => {
@@ -727,7 +736,7 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
 
                 {cartItemCount === 0 ? <div className="bk-cart-empty"><i className="fa-solid fa-basket-shopping" /><strong>Your cart is empty</strong><p>Browse treatments or Glow Plans and add an item to begin.</p></div> : <>
                   <div className="bk-cart-lines">
-                    {service && <div className="bk-cart-line bk-cart-line--primary">
+                    {service && !isPackageOnly && <div className="bk-cart-line bk-cart-line--primary">
                       <span className="bk-cart-line-icon"><i className="fa-solid fa-star" /></span>
                       <div><small>First treatment</small><strong>{service.name}</strong>{service.duration_mins && <span>{service.duration_mins} min</span>}</div>
                       <strong>₱{Number(service.price).toLocaleString()}</strong>
@@ -749,8 +758,7 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
                     {packageTotal > 0 && <div><span>Packages</span><strong>₱{packageTotal.toLocaleString()}</strong></div>}
                     <div className="bk-cart-grand"><span>Estimated total</span><strong>₱{grandTotal.toLocaleString()}</strong></div>
                   </div>
-                  {!service && <p className="bk-cart-requirement"><i className="fa-solid fa-circle-info" /> Choose a medical treatment before continuing with a package booking.</p>}
-                  <button type="button" className="bk-cart-checkout" disabled={!service} onClick={() => setStep(1)}><span>Continue</span><i className="fa-solid fa-arrow-right" /></button>
+                  <button type="button" className="bk-cart-checkout" disabled={!service || (isPackageOnly && cartProducts.length === 0)} onClick={() => setStep(1)}><span>Continue</span><i className="fa-solid fa-arrow-right" /></button>
                   <p className="bk-cart-caption"><i className="fa-solid fa-shield-heart" /> Final eligibility is confirmed by the doctor.</p>
                 </>}
               </aside>}
@@ -1050,9 +1058,9 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
                   <i className="fa-solid fa-kit-medical" />
                 </div>
                 <div>
-                  <p className="bk-review-service-name">{service?.name}</p>
+                  <p className="bk-review-service-name">{isPackageOnly ? "Glow Plans (Packages)" : service?.name}</p>
                   <p className="bk-review-service-meta">
-                    <span><i className="fa-solid fa-tag" /> PHP {service ? Number(service.price).toLocaleString() : ""}</span>
+                    <span><i className="fa-solid fa-tag" /> PHP {isPackageOnly ? packageTotal.toLocaleString() : service ? Number(service.price).toLocaleString() : ""}</span>
                     {service?.duration_mins && <span><i className="fa-regular fa-clock" /> {service.duration_mins} min</span>}
                   </p>
                 </div>
