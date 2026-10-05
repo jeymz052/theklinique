@@ -12,6 +12,8 @@ type Modal = "none" | "terms" | "cancellation";
 type FieldErrors = Partial<Record<"email" | "password" | "confirmPassword" | "agreements", string>>;
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const VERIFICATION_LINK_HOURS = 1;
+const RESEND_COOLDOWN_SECONDS = 60;
 
 function passwordValidationMessage(value: string) {
   if (value.length < 10 || !/[a-z]/.test(value) || !/[A-Z]/.test(value) || !/\d/.test(value) || !/[^A-Za-z0-9]/.test(value)) {
@@ -200,6 +202,8 @@ export function AuthView({ initialMode = "signin" }: { initialMode?: AuthMode })
   const postAuthDestination = bookingDestination?.startsWith("/") && !bookingDestination.startsWith("//")
     ? bookingDestination
     : null;
+  const requestedVerificationEmail = searchParams.get("email")?.trim().toLowerCase() || "";
+  const verificationRequired = searchParams.get("verification") === "required";
 
   /* ── Form state ── */
   const queryMode = searchParams.get("mode") as AuthMode | null;
@@ -208,7 +212,7 @@ export function AuthView({ initialMode = "signin" }: { initialMode?: AuthMode })
       ? queryMode
       : initialMode
   );
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(EMAIL_PATTERN.test(requestedVerificationEmail) ? requestedVerificationEmail : "");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
@@ -219,10 +223,13 @@ export function AuthView({ initialMode = "signin" }: { initialMode?: AuthMode })
 
   /* ── UI state ── */
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState(verificationRequired ? "Confirm your email address before opening the patient portal." : "");
   const [successMsg, setSuccessMsg] = useState("");
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [modal, setModal] = useState<Modal>("none");
+  const [verificationEmail, setVerificationEmail] = useState(EMAIL_PATTERN.test(requestedVerificationEmail) ? requestedVerificationEmail : "");
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const [resending, setResending] = useState(false);
 
   const clearMessages = () => {
     setError("");
@@ -238,6 +245,12 @@ export function AuthView({ initialMode = "signin" }: { initialMode?: AuthMode })
     clearMessages();
     setMode(next);
   };
+
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const timer = window.setInterval(() => setResendCooldown((value) => Math.max(0, value - 1)), 1000);
+    return () => window.clearInterval(timer);
+  }, [resendCooldown]);
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
@@ -278,6 +291,17 @@ export function AuthView({ initialMode = "signin" }: { initialMode?: AuthMode })
       }
 
       if (session?.user && (mode === "signin" || mode === "signup")) {
+        if (!session.user.email_confirmed_at) {
+          const unverifiedEmail = session.user.email || "";
+          await supabase.auth.signOut();
+          if (active) {
+            setVerificationEmail(unverifiedEmail);
+            setEmail(unverifiedEmail);
+            setMode("signin");
+            setError("Confirm your email address before signing in.");
+          }
+          return;
+        }
         const role = await resolveUserRole(session.user);
         if (active) router.replace(postAuthDestination || getDashboardRoute(role));
       }
@@ -311,14 +335,23 @@ export function AuthView({ initialMode = "signin" }: { initialMode?: AuthMode })
       });
 
       if (signInError) {
-        setError(signInError.message.toLowerCase().includes("email not confirmed")
-          ? "Please confirm your email before signing in."
+        const unconfirmed = signInError.message.toLowerCase().includes("email not confirmed");
+        if (unconfirmed) setVerificationEmail(cleanEmail);
+        setError(unconfirmed
+          ? "Please confirm your email before signing in. You can resend the verification email below."
           : "The email or password is incorrect.");
         return;
       }
 
       if (!data.user) {
         setError("Sign in failed. Please try again.");
+        return;
+      }
+
+      if (!data.user.email_confirmed_at) {
+        await supabase.auth.signOut();
+        setVerificationEmail(cleanEmail);
+        setError("Confirm your email address before signing in. You can resend the verification email below.");
         return;
       }
 
@@ -371,12 +404,17 @@ export function AuthView({ initialMode = "signin" }: { initialMode?: AuthMode })
       }
 
       if (data?.session) {
-        router.push(postAuthDestination || "/dashboard/patient");
+        await supabase.auth.signOut();
+        setVerificationEmail(cleanEmail);
+        setMode("signin");
+        setError("Email confirmation is not enabled in Supabase. Enable Confirm email before launching this site.");
         return;
       }
 
+      setVerificationEmail(cleanEmail);
+      setResendCooldown(RESEND_COOLDOWN_SECONDS);
       setSuccessMsg(
-        "Account created! Please check your email and confirm your address before signing in."
+        `Account created. Check ${cleanEmail} and verify it within ${VERIFICATION_LINK_HOURS} hour before signing in.`
       );
       setMode("signin");
       setPassword("");
@@ -385,6 +423,33 @@ export function AuthView({ initialMode = "signin" }: { initialMode?: AuthMode })
       setError(err instanceof Error ? err.message : "An error occurred during sign up.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleResendVerification = async () => {
+    const cleanEmail = (verificationEmail || email).trim().toLowerCase();
+    clearMessages();
+    if (!EMAIL_PATTERN.test(cleanEmail)) {
+      setFieldErrors({ email: "Enter the email address used during signup." });
+      setError("Enter your signup email before requesting another link.");
+      return;
+    }
+    setResending(true);
+    try {
+      const { error: resendError } = await supabase.auth.resend({
+        type: "signup",
+        email: cleanEmail,
+        options: { emailRedirectTo: `${window.location.origin}/auth?verified=1${postAuthDestination ? `&next=${encodeURIComponent(postAuthDestination)}` : ""}` },
+      });
+      if (resendError) throw resendError;
+      setVerificationEmail(cleanEmail);
+      setResendCooldown(RESEND_COOLDOWN_SECONDS);
+      setSuccessMsg(`A new verification email was sent to ${cleanEmail}. The link expires in ${VERIFICATION_LINK_HOURS} hour.`);
+    } catch (value) {
+      const message = value instanceof Error ? value.message : "Unable to resend the verification email.";
+      setError(message.toLowerCase().includes("rate") ? "Please wait before requesting another verification email." : message);
+    } finally {
+      setResending(false);
     }
   };
 
@@ -578,6 +643,13 @@ export function AuthView({ initialMode = "signin" }: { initialMode?: AuthMode })
               </div>
 
               {error && <div className="auth-alert-kulot error" role="alert"><i className="fa-solid fa-circle-exclamation" /><span>{error}</span></div>}
+
+              {verificationEmail && <div className="auth-verification-box">
+                <div><i className="fa-regular fa-envelope" /><span><strong>Email verification required</strong><small>Links expire after {VERIFICATION_LINK_HOURS} hour. Check spam or request a new link.</small></span></div>
+                <button type="button" onClick={() => void handleResendVerification()} disabled={resending || resendCooldown > 0}>
+                  {resending ? "Sending…" : resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend verification email"}
+                </button>
+              </div>}
 
               <button
                 type="submit"

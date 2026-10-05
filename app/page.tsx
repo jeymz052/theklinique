@@ -7,32 +7,11 @@ import Link from "next/link";
 import BookingForm from "@/app/components/BookingForm";
 import LandingContactForm from "@/app/components/LandingContactForm";
 import { DEFAULT_NAVIGATION_ORDER, DEFAULT_SERVICE_ICONS, type ContentTab, type LandingContent, type LandingMedia } from "@/app/components/WebsiteContentManager";
-import { FEATURED_FACEBOOK_REEL, normalizeFacebookPostUrl } from "@/lib/landing-social";
+import { FEATURED_FACEBOOK_REEL, getInstagramEmbedUrl, isEmbeddableFacebookPost, isFacebookVideo, normalizeFacebookPostUrl } from "@/lib/landing-social";
 import type { BlogPost } from "@/lib/blog";
 
 type LandingPackage = { id: string; name: string; description: string | null; price: number; category: string };
 type LandingCategory = { id: string; name: string; slug: string };
-
-function isEmbeddableFacebookPost(url: string) {
-  try {
-    const parsed = new URL(url);
-    const isFacebook = /(^|\.)facebook\.com$/i.test(parsed.hostname);
-    const isPostPath = /\/(posts|videos|reel)\/[^/]+/i.test(parsed.pathname) || /\/share\/(p|r|v)\/[^/]+/i.test(parsed.pathname);
-    const isPostPage = /\/(permalink|photo)\.php$/i.test(parsed.pathname);
-    return isFacebook && (isPostPath || isPostPage);
-  } catch {
-    return false;
-  }
-}
-
-function isFacebookVideo(url: string) {
-  try {
-    const parsed = new URL(url);
-    return /(^|\.)facebook\.com$/i.test(parsed.hostname) && (/\/(videos|reel)\/[^/]+/i.test(parsed.pathname) || /\/share\/(r|v)\/[^/]+/i.test(parsed.pathname));
-  } catch {
-    return false;
-  }
-}
 
 const FAQS = [
   { question: "Do I need a consultation before treatment?", answer: "Some medical aesthetic procedures require an in-clinic assessment first. Dr. Kharyl will review your goals, medical history, suitability, expected results, and alternatives before proceeding." },
@@ -375,10 +354,11 @@ export default function Home() {
             const postUrl = normalizeFacebookPostUrl(post.url);
             const embedFacebookPost = post.platform === "facebook" && isEmbeddableFacebookPost(postUrl);
             const embedFacebookVideo = embedFacebookPost && isFacebookVideo(postUrl);
+            const instagramEmbedUrl = post.platform === "instagram" ? getInstagramEmbedUrl(postUrl) : null;
             const destination = postUrl || (post.platform === "facebook" ? content?.facebookPageUrl : content?.instagramUrl) || "#socials";
             return <article key={`${postUrl}-${index}`}>
               <header><span><i className={`fa-brands fa-${post.platform}`} /> {post.title || `${post.platform} post`}</span><a href={destination} target="_blank" rel="noopener noreferrer" aria-label={`Open ${post.title || post.platform} post`}><i className="fa-solid fa-arrow-up-right-from-square" /></a></header>
-              {embedFacebookPost ? <iframe title={post.title || `Facebook post ${index + 1}`} src={`https://www.facebook.com/plugins/${embedFacebookVideo ? "video" : "post"}.php?href=${encodeURIComponent(postUrl)}&show_text=true&width=500`} width="500" height="520" scrolling="no" allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share" allowFullScreen /> : post.platform === "facebook" ? <a className="landing-social-preview" href={destination} target="_blank" rel="noopener noreferrer"><span className="landing-social-preview-media"><img src="/images/herobg.png" alt="The Klinique" /><i className="fa-brands fa-facebook-f" /></span><strong>{post.title || "Latest from The Klinique"}</strong><span>View our latest posts on Facebook</span></a> : <a className="landing-instagram-post" href={destination} target="_blank" rel="noopener noreferrer"><i className="fa-brands fa-instagram" /><strong>{post.title || "View Instagram"}</strong><span>Open this post on Instagram</span></a>}
+              {embedFacebookPost ? <iframe title={post.title || `Facebook post ${index + 1}`} src={`https://www.facebook.com/plugins/${embedFacebookVideo ? "video" : "post"}.php?href=${encodeURIComponent(postUrl)}&show_text=true&width=500`} width="500" height="520" scrolling="no" allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share" allowFullScreen /> : instagramEmbedUrl ? <iframe className="landing-instagram-embed" title={post.title || `Instagram post ${index + 1}`} src={instagramEmbedUrl} scrolling="no" allow="clipboard-write; encrypted-media; picture-in-picture; web-share" /> : post.platform === "facebook" ? <a className="landing-social-preview" href={destination} target="_blank" rel="noopener noreferrer"><span className="landing-social-preview-media"><img src="/images/herobg.png" alt="The Klinique" /><i className="fa-brands fa-facebook-f" /></span><strong>{post.title || "Latest from The Klinique"}</strong><span>View our latest posts on Facebook</span></a> : <a className="landing-instagram-post" href={destination} target="_blank" rel="noopener noreferrer"><i className="fa-brands fa-instagram" /><strong>{post.title || "View Instagram"}</strong><span>Open this post on Instagram</span></a>}
             </article>;
           })}
         </div>

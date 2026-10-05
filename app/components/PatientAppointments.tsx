@@ -31,8 +31,8 @@ export default function PatientAppointments({ appointments, payingAppointmentId,
   const [saving, setSaving] = useState(false);
   const today = new Date().toISOString().slice(0, 10);
   const visible = useMemo(() => appointments.filter((appointment) => filter === "upcoming"
-    ? ["pending", "confirmed"].includes(appointment.status) && appointment.date >= today
-    : !(["pending", "confirmed"].includes(appointment.status) && appointment.date >= today)), [appointments, filter, today]);
+    ? appointment.status === "confirmed" && appointment.date >= today
+    : ["completed", "cancelled", "no_show"].includes(appointment.status) || (appointment.status === "confirmed" && appointment.date < today)), [appointments, filter, today]);
   const selected = appointments.find((appointment) => appointment.id === selectedId) || null;
 
   useEffect(() => {

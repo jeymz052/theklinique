@@ -1083,7 +1083,7 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
               <div className="bk-review-notice">
                 <i className="fa-solid fa-circle-info" />
                 <span>
-                  Your slot will be held as <strong>awaiting payment</strong>. It becomes confirmed automatically after PayMongo reports a successful QR Ph payment.
+                  Your slot will be held for <strong>15 minutes while awaiting payment</strong>. It becomes confirmed automatically after PayMongo reports a successful QR Ph payment. If payment is not completed in time, the slot is released.
                 </span>
               </div>
               <div className="bk-review-total">

@@ -34,7 +34,7 @@ export async function POST(request: Request) {
     const clientIds = (clients || []).map((client) => client.id);
     if (!clientIds.length) return NextResponse.json({ confirmed: false, error: "No patient record was found." }, { status: 404 });
 
-    let appointmentQuery = admin.from("appointments").select("id, reference_no, status, visit_kind").in("client_id", clientIds).order("created_at", { ascending: false }).limit(1);
+    let appointmentQuery = admin.from("appointments").select("id, reference_no, status, visit_kind, payment_expires_at").in("client_id", clientIds).order("created_at", { ascending: false }).limit(1);
     if (requestedAppointmentId) appointmentQuery = appointmentQuery.eq("id", requestedAppointmentId);
     else appointmentQuery = appointmentQuery.in("status", ["pending", "confirmed"]);
     const { data: appointments, error: appointmentError } = await appointmentQuery;
@@ -46,6 +46,10 @@ export async function POST(request: Request) {
 
     const { data: payment, error: paymentError } = await admin.from("payments").select("id, paymongo_payment_id, status").eq("appointment_id", appointment.id).order("created_at", { ascending: false }).limit(1).maybeSingle();
     if (paymentError) throw paymentError;
+    if (appointment.payment_expires_at && new Date(appointment.payment_expires_at).getTime() <= Date.now() && payment?.status !== "paid") {
+      await admin.from("appointments").update({ status: "cancelled", cancellation_reason: "Reservation payment deadline expired", cancelled_at: new Date().toISOString() }).eq("id", appointment.id).eq("status", "pending");
+      return NextResponse.json({ confirmed: false, error: "The 15-minute payment window expired. Please book again." }, { status: 409 });
+    }
     if (!payment?.paymongo_payment_id) return NextResponse.json({ confirmed: false, error: "The reservation checkout was not found." }, { status: 409 });
     if (payment.status === "paid") {
       await admin.from("appointments").update({ status: "confirmed" }).eq("id", appointment.id).eq("status", "pending");

@@ -36,7 +36,7 @@ export default function DashboardInsights({ appointments, role }: { appointments
   const completionRate = Math.round((statuses.find((item) => item.status === "completed")!.count / total) * 100);
   const confirmationRate = Math.round(((statuses.find((item) => item.status === "confirmed")!.count + statuses.find((item) => item.status === "completed")!.count) / total) * 100);
   const topServices = Array.from(appointments.reduce((map, item) => map.set(item.service, (map.get(item.service) || 0) + 1), new Map<string, number>()).entries()).sort((a, b) => b[1] - a[1]).slice(0, 4);
-  const upcoming = appointments.filter((item) => item.date >= toDateKey(today) && item.status !== "cancelled").slice(0, 3);
+  const upcoming = appointments.filter((item) => item.date >= toDateKey(today) && item.status === "confirmed").slice(0, 3);
   const activeValue = appointments.filter((item) => item.status === "confirmed" || item.status === "completed").reduce((sum, item) => sum + item.amount, 0);
   const averageValue = appointments.length ? Math.round(appointments.reduce((sum, item) => sum + item.amount, 0) / appointments.length) : 0;
   const busiestDay = days.reduce((best, day) => day.value > best.value ? day : best, days[0]);
@@ -83,7 +83,7 @@ export default function DashboardInsights({ appointments, role }: { appointments
         </article>
 
         <article className="dx-chart-card dx-chart-card--upcoming">
-          <div className="dx-chart-title"><div><strong>{role === "patient" ? "Coming up" : "Next in the diary"}</strong><span>Upcoming confirmed and pending visits</span></div><i className="fa-regular fa-calendar" /></div>
+          <div className="dx-chart-title"><div><strong>{role === "patient" ? "Coming up" : "Next in the diary"}</strong><span>Upcoming confirmed visits</span></div><i className="fa-regular fa-calendar" /></div>
           {upcoming.length ? <div className="dx-upcoming-list">{upcoming.map((item) => <div key={item.id}><span className="dx-date-tile"><strong>{new Date(`${item.date}T00:00:00`).toLocaleDateString("en-PH", { day: "2-digit" })}</strong><small>{new Date(`${item.date}T00:00:00`).toLocaleDateString("en-PH", { month: "short" })}</small></span><p><strong>{role === "patient" ? item.service : item.patient}</strong><small>{item.time} · {item.service}</small></p><i className={`fa-solid ${item.status === "confirmed" ? "fa-circle-check" : "fa-clock"}`} /></div>)}</div> : <div className="dx-chart-empty"><i className="fa-regular fa-calendar-check" /><strong>Schedule is clear</strong><span>New appointments will be shown here automatically.</span></div>}
         </article>
       </div>

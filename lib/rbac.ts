@@ -133,6 +133,18 @@ export function useRoleAuth(allowedRoles: UserRole[]) {
           return;
         }
 
+        if (!session.user.email_confirmed_at) {
+          const unverifiedEmail = session.user.email || "";
+          await supabase.auth.signOut();
+          if (mounted) {
+            setUser(null);
+            setRole(null);
+            setLoading(false);
+            router.replace(`/signin?verification=required&email=${encodeURIComponent(unverifiedEmail)}`);
+          }
+          return;
+        }
+
         const resolvedRole = await resolveUserRole(session.user);
 
         if (!mounted) return;
@@ -164,7 +176,7 @@ export function useRoleAuth(allowedRoles: UserRole[]) {
           setRole(null);
           router.replace("/signin");
         }
-      } else if (session?.user) {
+      } else if (session?.user && session.user.email_confirmed_at) {
         const r = await resolveUserRole(session.user);
         if (mounted) {
           setUser(session.user);

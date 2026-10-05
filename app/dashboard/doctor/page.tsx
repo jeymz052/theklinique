@@ -109,7 +109,6 @@ export default function DoctorDashboard() {
 
   const appointmentActions = (booking: Booking) => (
     <div className="dk-action-group">
-      {booking.status === "pending" && <button type="button" className="dk-act-btn dk-act-complete" onClick={() => handleStatusChange(booking.id, "confirmed")}><i className="fa-solid fa-check" /> Confirm</button>}
       {booking.status === "confirmed" && <button type="button" className="dk-act-btn dk-act-complete" onClick={() => handleStatusChange(booking.id, "completed")}><i className="fa-solid fa-check-double" /> Complete</button>}
       {booking.status === "confirmed" && <button type="button" className="dk-act-btn" onClick={() => handleStatusChange(booking.id, "no_show")}><i className="fa-solid fa-user-slash" /> No show</button>}
       {(booking.status === "pending" || booking.status === "confirmed") && <button type="button" className="dk-act-btn" onClick={() => handleStatusChange(booking.id, "cancelled")}><i className="fa-solid fa-xmark" /> Cancel</button>}

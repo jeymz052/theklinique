@@ -28,6 +28,44 @@ export function normalizeFacebookPostUrl(value: string) {
   }
 }
 
+export function isEmbeddableFacebookPost(value: string) {
+  try {
+    const parsed = new URL(value);
+    if (!/(^|\.)facebook\.com$/i.test(parsed.hostname)) return false;
+
+    const path = parsed.pathname.replace(/\/+$/, "");
+    return /\/(posts|videos|reel|photos|share)\/[^/]+/i.test(path)
+      || /\/(permalink|photo|story)\.php$/i.test(path)
+      || parsed.searchParams.has("story_fbid")
+      || parsed.searchParams.has("fbid");
+  } catch {
+    return false;
+  }
+}
+
+export function isFacebookVideo(value: string) {
+  try {
+    const parsed = new URL(value);
+    return /(^|\.)facebook\.com$/i.test(parsed.hostname)
+      && (/\/(videos|reel)\/[^/]+/i.test(parsed.pathname) || /\/share\/(r|v)\/[^/]+/i.test(parsed.pathname));
+  } catch {
+    return false;
+  }
+}
+
+export function getInstagramEmbedUrl(value: string) {
+  try {
+    const parsed = new URL(value);
+    if (!/(^|\.)instagram\.com$/i.test(parsed.hostname)) return null;
+
+    const match = parsed.pathname.match(/^\/(p|reel|tv)\/([A-Za-z0-9_-]+)/i);
+    if (!match) return null;
+    return `https://www.instagram.com/${match[1].toLowerCase()}/${match[2]}/embed/`;
+  } catch {
+    return null;
+  }
+}
+
 export function normalizeLandingSocialContent<T extends { socialPostUrl?: string; socialPosts?: Array<{ url: string }> }>(content: T): T {
   return {
     ...content,

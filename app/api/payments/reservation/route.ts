@@ -34,12 +34,16 @@ export async function POST(request: Request) {
     const admin = getAdminClient();
     const { data: appointment, error: appointmentError } = await admin
       .from("appointments")
-      .select("id, reference_no, visit_kind, clients!inner(email, full_name, phone)")
+      .select("id, reference_no, visit_kind, payment_expires_at, clients!inner(email, full_name, phone)")
       .eq("id", appointmentId)
       .eq("status", "pending")
       .eq("clients.email", user.email)
       .single();
     if (appointmentError || !appointment) return NextResponse.json({ error: "Appointment not found." }, { status: 404 });
+    if (appointment.payment_expires_at && new Date(appointment.payment_expires_at).getTime() <= Date.now()) {
+      await admin.from("appointments").update({ status: "cancelled", cancellation_reason: "Reservation payment deadline expired", cancelled_at: new Date().toISOString() }).eq("id", appointment.id).eq("status", "pending");
+      return NextResponse.json({ error: "The 15-minute payment window expired. Please book the available slot again." }, { status: 409 });
+    }
     const client = Array.isArray(appointment.clients) ? appointment.clients[0] : appointment.clients;
     if (!client) return NextResponse.json({ error: "Patient details were not found for this appointment." }, { status: 404 });
     const isFollowUp = appointment.visit_kind === "consultation_follow_up";

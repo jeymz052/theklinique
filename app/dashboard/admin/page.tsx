@@ -389,17 +389,12 @@ export default function AdminDashboard() {
                         <td>
                           <span className={`dk-badge dk-badge-${b.status}`}>
                             <i className={`fa-solid ${b.status === "confirmed" ? "fa-circle-check" : b.status === "completed" ? "fa-award" : "fa-hourglass-half"}`} />
-                            <span style={{ textTransform: "capitalize" }}>{b.status}</span>
+                            <span style={{ textTransform: "capitalize" }}>{b.status === "pending" ? "Awaiting payment" : b.status}</span>
                           </span>
                         </td>
                         <td style={{ textAlign: "right" }}>
                           <div className="dk-action-group">
-                            {b.status === "pending" && (
-                              <button type="button" className="dk-act-btn dk-act-verify" onClick={() => handleUpdateStatus(b.id, "confirmed")}>
-                                <i className="fa-solid fa-check" /> Verify
-                              </button>
-                            )}
-                            {b.status !== "completed" && (
+                            {b.status === "confirmed" && (
                               <button type="button" className="dk-act-btn dk-act-complete" onClick={() => handleUpdateStatus(b.id, "completed")}>
                                 <i className="fa-solid fa-receipt" /> Complete
                               </button>

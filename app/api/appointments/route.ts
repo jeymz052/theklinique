@@ -8,6 +8,7 @@ const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const PAYMENT_HOLD_MINUTES = 15;
 
 const allowedStatuses = ["pending", "confirmed", "completed", "cancelled", "no_show"] as const;
 type AppointmentStatus = (typeof allowedStatuses)[number];
@@ -96,6 +97,8 @@ export async function GET(request: Request) {
 
   try {
     const admin = getAdminClient();
+    const { error: releaseError } = await admin.rpc("release_expired_appointment_holds");
+    if (releaseError) throw releaseError;
     let query = admin
       .from("appointments")
       .select("id, reference_no, appointment_date, appointment_time, status, total_amount, notes, visit_kind, parent_appointment_id, clients(full_name, email, phone), services(name, service_categories(slug)), payments(status, amount, paid_at)")
@@ -161,6 +164,8 @@ export async function POST(request: Request) {
     }
 
     const admin = getAdminClient();
+    const { error: releaseError } = await admin.rpc("release_expired_appointment_holds");
+    if (releaseError) throw releaseError;
     let existingClient: { id:string; full_name:string; email:string|null; phone:string|null } | null = null;
     if (staffBooking) {
       const { data, error } = await admin.from("clients").select("id, full_name, email, phone").eq("id", clientId).maybeSingle();
@@ -286,6 +291,7 @@ export async function POST(request: Request) {
         appointment_time: appointmentTime,
         total_amount: treatmentTotal,
         status: staffBooking ? "confirmed" : "pending",
+        payment_expires_at: staffBooking ? null : new Date(Date.now() + PAYMENT_HOLD_MINUTES * 60_000).toISOString(),
         notes: notes || null,
         visit_kind: isFollowUp ? "consultation_follow_up" : "standard",
         parent_appointment_id: parentAppointmentId,
@@ -379,7 +385,7 @@ export async function POST(request: Request) {
       console.error("Unable to send booking notifications:", notificationError);
     }
 
-    return NextResponse.json({ appointment, requiresPayment: !staffBooking, reservationFee: staffBooking ? 0 : RESERVATION_FEE_PHP });
+    return NextResponse.json({ appointment, requiresPayment: !staffBooking, reservationFee: staffBooking ? 0 : RESERVATION_FEE_PHP, paymentHoldMinutes: staffBooking ? 0 : PAYMENT_HOLD_MINUTES });
   } catch (error) {
     console.error("Unable to create appointment:", error);
     return NextResponse.json({ error: "Unable to save the booking. Please try again." }, { status: 500 });
@@ -418,6 +424,11 @@ export async function PATCH(request: Request) {
     };
     if (!transitions[current.status]?.includes(status)) {
       return NextResponse.json({ error: `A ${current.status} appointment cannot be changed to ${status}.` }, { status: 409 });
+    }
+    if (current.status === "pending" && status === "confirmed") {
+      const { data: paidReservation, error: paymentError } = await admin.from("payments").select("id").eq("appointment_id", id).eq("status", "paid").limit(1).maybeSingle();
+      if (paymentError) throw paymentError;
+      if (!paidReservation) return NextResponse.json({ error: "This appointment is still awaiting its reservation payment and cannot be confirmed manually." }, { status: 409 });
     }
     const changes: Record<string, string | null> = { status };
     if (status === "completed") changes.completed_at = new Date().toISOString();

@@ -160,7 +160,7 @@ export default function PatientDashboard() {
     (user?.user_metadata?.full_name as string) ||
     (user?.email ? user.email.split("@")[0] : "Patient");
 
-  const upcomingAppointments = appointments.filter((appointment) => ["pending", "confirmed"].includes(appointment.status) && appointment.date >= new Date().toISOString().slice(0, 10));
+  const upcomingAppointments = appointments.filter((appointment) => appointment.status === "confirmed" && appointment.date >= new Date().toISOString().slice(0, 10));
   const stats = [
     { icon: "fa-calendar-check",  label: "Appointments",    value: String(appointments.length), sub: `${upcomingAppointments.length} upcoming` },
     { icon: "fa-notes-medical",   label: "Released Notes",  value: "0", sub: "Allowed by doctor"    },

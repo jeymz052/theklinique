@@ -13,6 +13,8 @@ export async function GET(request: Request) {
 
   try {
     const admin = createClient(url, serviceRoleKey, { auth: { persistSession: false } });
+    const { error: releaseError } = await admin.rpc("release_expired_appointment_holds");
+    if (releaseError) throw releaseError;
     const dayOfWeek = new Date(`${date}T00:00:00Z`).getUTCDay();
     const [{ data: schedule, error: scheduleError }, { data: blockedDate, error: blockedError }, { data: appointments, error: appointmentsError }] = await Promise.all([
       admin.from("availability_schedules").select("open_time, close_time").eq("day_of_week", dayOfWeek).eq("is_active", true).maybeSingle(),

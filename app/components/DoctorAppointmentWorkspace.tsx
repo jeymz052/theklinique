@@ -42,7 +42,7 @@ export default function DoctorAppointmentWorkspace({ appointments, onStatusChang
 
   const summary = useMemo(() => ({
     today: appointments.filter((item) => item.date === today && !["cancelled", "no_show"].includes(item.status)).length,
-    upcoming: appointments.filter((item) => item.date > today && ["pending", "confirmed"].includes(item.status)).length,
+    upcoming: appointments.filter((item) => item.date > today && item.status === "confirmed").length,
     confirmed: appointments.filter((item) => item.status === "confirmed").length,
     pending: appointments.filter((item) => item.status === "pending").length + rescheduleRequests.length,
   }), [appointments, rescheduleRequests.length, today]);
@@ -50,7 +50,7 @@ export default function DoctorAppointmentWorkspace({ appointments, onStatusChang
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return appointments.filter((item) => {
-      const matchesTimeline = timeline === "all" || (timeline === "today" && item.date === today) || (timeline === "upcoming" && item.date >= today && ["pending", "confirmed"].includes(item.status)) || (timeline === "past" && (item.date < today || ["completed", "cancelled", "no_show"].includes(item.status)));
+      const matchesTimeline = timeline === "all" || (timeline === "today" && item.date === today && item.status !== "pending") || (timeline === "upcoming" && item.date >= today && item.status === "confirmed") || (timeline === "past" && (item.date < today || ["completed", "cancelled", "no_show"].includes(item.status)));
       const matchesStatus = status === "all" || item.status === status;
       const matchesQuery = !needle || [item.patient, item.referenceNo, item.service, item.email, item.phone, item.notes].some((value) => value.toLowerCase().includes(needle));
       return matchesTimeline && matchesStatus && matchesQuery;
@@ -121,7 +121,6 @@ export default function DoctorAppointmentWorkspace({ appointments, onStatusChang
               <div className="ma-actions">
                 <button type="button" className="ma-detail-btn" onClick={() => setExpandedId(isExpanded ? null : appointment.id)}><i className={`fa-solid fa-chevron-${isExpanded ? "up" : "down"}`} /> {isExpanded ? "Less" : "Details"}</button>
                 {["confirmed", "completed"].includes(appointment.status) && <button type="button" className="ma-primary-btn" onClick={() => onOpenClinicalWorkspace(appointment)}><i className={`fa-solid ${appointment.serviceCategory === "consultations" ? "fa-comment-medical" : "fa-syringe"}`} /> Open {appointment.serviceCategory === "consultations" ? "consultation" : "treatment"}</button>}
-                {appointment.status === "pending" && <button type="button" className="ma-primary-btn" disabled={isUpdating} onClick={() => update(appointment.id, "confirmed")}><i className="fa-solid fa-check" /> Confirm</button>}
                 {appointment.status === "confirmed" && <button type="button" className="ma-primary-btn" disabled={isUpdating} onClick={() => update(appointment.id, "completed")}><i className="fa-solid fa-check-double" /> Complete</button>}
                 {appointment.status === "confirmed" && <button type="button" className="ma-detail-btn" disabled={isUpdating} onClick={() => update(appointment.id, "no_show")}><i className="fa-solid fa-user-slash" /> No show</button>}
                 {["pending", "confirmed"].includes(appointment.status) && <button type="button" className="ma-cancel-btn" disabled={isUpdating} onClick={() => update(appointment.id, "cancelled")}><i className="fa-solid fa-xmark" /> Cancel</button>}

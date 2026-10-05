@@ -27,7 +27,7 @@ export async function GET(request: Request) {
     const db = admin();
     const [{ data: profile }, { data: appointments, error: appointmentError }, { data: blocks, error: blockError }] = await Promise.all([
       db.from("profiles").select("role").eq("id", authData.user.id).maybeSingle(),
-      db.from("appointments").select("id, reference_no, appointment_date, appointment_time, status, clients(full_name, email), services(name, service_categories(name, calendar_color))").gte("appointment_date", start).lte("appointment_date", end).neq("status", "cancelled").order("appointment_date").order("appointment_time"),
+      db.from("appointments").select("id, reference_no, appointment_date, appointment_time, status, clients(full_name, email), services(name, service_categories(name, calendar_color))").gte("appointment_date", start).lte("appointment_date", end).in("status", ["confirmed", "completed", "no_show"]).order("appointment_date").order("appointment_time"),
       db.from("blocked_dates").select("id, blocked_date, reason").gte("blocked_date", start).lte("blocked_date", end).order("blocked_date"),
     ]);
     if (appointmentError || blockError) throw appointmentError || blockError;
