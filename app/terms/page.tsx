@@ -43,7 +43,7 @@ export default function TermsPage() {
           <section className="policy-section">
             <h2>3. Medical Disclaimer</h2>
             <p>
-              All treatments at The Klinique are medical procedures performed by Dr. Kharyl Dence,
+              All treatments at The Klinique are medical procedures performed by Dr. Kharyl,
               Medical and Aesthetic Doctor. Results may vary between individuals. A thorough
               consultation is required before any treatment. We reserve the right to decline any
               service if deemed medically inappropriate.

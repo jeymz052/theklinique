@@ -116,7 +116,7 @@ export default function DoctorDashboard() {
   );
 
   const doctorName =
-    (user?.user_metadata?.full_name as string) || (role === "superadmin" ? "Super Administrator" : "Dr. Kharyl Dence");
+    (user?.user_metadata?.full_name as string) || (role === "superadmin" ? "Super Administrator" : "Dr. Kharyl");
 
   const stats = [
     { icon: "fa-calendar-day",   label: "Today's Procedures", value: todayBookings.length.toString(),                                    sub: "Scheduled today"       },
@@ -266,7 +266,7 @@ export default function DoctorDashboard() {
           </button>
           <div>
             <p className="dk-workspace-eyebrow">The Klinique</p>
-            <p className="dk-workspace-title">{view === "all-appts" ? "Manage Appointments" : view === "emr" ? "Patient Records" : view === "consultations" ? "Consultations" : view === "treatments" ? "Treatment Workspace" : "Doc Kharyl Workspace"}</p>
+            <p className="dk-workspace-title">{view === "all-appts" ? "Manage Appointments" : view === "emr" ? "Patient Records" : view === "consultations" ? "Consultations" : view === "treatments" ? "Treatment Workspace" : "Dr. Kharyl Workspace"}</p>
             <p style={{ fontSize: "0.7rem", color: "#9a7a84", marginTop: "0.1rem" }}>
               <span style={{ display: "inline-block", width: "7px", height: "7px", borderRadius: "50%", background: "#16a34a", marginRight: "0.4rem", verticalAlign: "middle" }} />
               The Klinique · Cagayan de Oro · {dayName}, {dateStr}

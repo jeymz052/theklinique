@@ -639,7 +639,7 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
             <div>
               <p className="bk-modal-clinic">Book an Appointment</p>
               <p className="bk-modal-doctor">
-                <i className="fa-solid fa-user-doctor" /> Dr. Kharyl Dence, MD · The Klinique CDO
+                <i className="fa-solid fa-user-doctor" /> Dr. Kharyl
               </p>
             </div>
           </div>
@@ -664,7 +664,7 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
             <h1 className="bk-standalone-title">Book an Appointment</h1>
             <p className="bk-standalone-sub">
               <i className="fa-solid fa-user-doctor" />
-              Dr. Kharyl Dence, MD · The Klinique · Cagayan de Oro City
+              Dr. Kharyl
             </p>
           </div>
         </div>
@@ -698,7 +698,7 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
               <span className="bk-panel-icon"><i className="fa-solid fa-kit-medical" /></span>
               <div>
                 <h2 className="bk-panel-title">Choose Your Treatment</h2>
-                <p className="bk-panel-sub">Select the service you&apos;d like to book with Dr. Kharyl Dence</p>
+                <p className="bk-panel-sub">Select the service you&apos;d like to book with Dr. Kharyl</p>
               </div>
             </div>
 
@@ -950,12 +950,12 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
               <span className="bk-panel-icon"><i className="fa-solid fa-calendar-days" /></span>
               <div>
                 <h2 className="bk-panel-title">Select Date & Time</h2>
-                <p className="bk-panel-sub">Choose your preferred appointment slot with Dr. Kharyl Dence</p>
+                <p className="bk-panel-sub">Choose your preferred appointment slot with Dr. Kharyl</p>
               </div>
             </div>
 
             <div className="bk-schedule-context">
-              <div><span><i className="fa-solid fa-user-doctor" /></span><p>Doctor<strong>Dr. Kharyl Dence</strong></p></div>
+              <div><span><i className="fa-solid fa-user-doctor" /></span><p>Doctor<strong>Dr. Kharyl</strong></p></div>
               <div><span><i className="fa-solid fa-clock" /></span><p>Slot interval<strong>Every 1 hour</strong></p></div>
               <div><span><i className="fa-solid fa-location-dot" /></span><p>Location<strong>The Klinique CDO</strong></p></div>
             </div>
@@ -1120,7 +1120,7 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
                   <dl>
                     <div><dt>Date</dt><dd>{selectedDate}</dd></div>
                     <div><dt>Time</dt><dd>{selectedTime}</dd></div>
-                    <div><dt>Doctor</dt><dd>Dr. Kharyl Dence, MD</dd></div>
+                    <div><dt>Doctor</dt><dd>Dr. Kharyl</dd></div>
                     <div><dt>Clinic</dt><dd>The Klinique · Cagayan de Oro</dd></div>
                   </dl>
                 </section>

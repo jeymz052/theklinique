@@ -12,7 +12,7 @@ insert into public.landing_content (id, content) values (1, jsonb_build_object(
   'heroSubtitle', 'Expert care. Natural results. A more confident you.',
   'heroDescription', 'At The Klinique, we combine medical expertise with a personalized approach to help you look and feel your best — inside and out.',
   'doctorEyebrow', 'Meet Your Doctor',
-  'doctorName', 'Dr. Kharyl Dence',
+  'doctorName', 'Dr. Kharyl',
   'doctorTitle', 'Medical and Aesthetic Doctor',
   'doctorBio', 'Doctor-led, evidence-based aesthetic care shaped around your goals, comfort, and natural features.',
   'socialHeading', 'Latest from The Klinique',

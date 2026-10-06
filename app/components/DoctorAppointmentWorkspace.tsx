@@ -114,7 +114,7 @@ export default function DoctorAppointmentWorkspace({ appointments, onStatusChang
               <div className="ma-patient-avatar">{initials(appointment.patient)}</div>
               <div className="ma-booking-main">
                 <div className="ma-booking-title"><h3>{appointment.patient}</h3><span className="ma-visit-pill"><i className="fa-solid fa-hospital" /> Clinic</span><span className={`dk-badge dk-badge-${appointment.status}`}>{appointmentStatusLabel(appointment)}</span></div>
-                <div className="ma-contact"><span><i className="fa-solid fa-user-doctor" /> Dr. Kharyl Dence</span>{appointment.email && <span><i className="fa-solid fa-envelope" /> {appointment.email}</span>}{appointment.phone && <span><i className="fa-solid fa-phone" /> {appointment.phone}</span>}</div>
+                <div className="ma-contact"><span><i className="fa-solid fa-user-doctor" /> Dr. Kharyl</span>{appointment.email && <span><i className="fa-solid fa-envelope" /> {appointment.email}</span>}{appointment.phone && <span><i className="fa-solid fa-phone" /> {appointment.phone}</span>}</div>
                 <p className="ma-service"><strong>Service:</strong> {appointment.service}</p>
                 {isExpanded && <div className="ma-extra"><div><span>Reference</span><strong>{appointment.referenceNo}</strong></div><div><span>Payment</span><strong>{appointment.paymentStatus === "paid" ? "Reservation paid" : appointment.paymentStatus === "awaiting_payment" ? "Awaiting reservation fee" : "Clinic booking"}</strong></div><div><span>Estimate</span><strong>₱{appointment.amount.toLocaleString()}</strong></div>{appointment.notes && <div className="wide"><span>Patient notes</span><strong>{appointment.notes}</strong></div>}</div>}
               </div>

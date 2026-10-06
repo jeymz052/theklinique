@@ -396,7 +396,7 @@ export default function PatientDashboard() {
                   <i className="fa-solid fa-calendar-plus dk-cta-strip-icon" />
                   <div>
                     <p className="dk-cta-title">Ready for your next treatment?</p>
-                    <p className="dk-cta-sub">Book with Dr. Kharyl Dence · The Klinique · Cagayan de Oro</p>
+                    <p className="dk-cta-sub">Book with Dr. Kharyl · The Klinique · Cagayan de Oro</p>
                   </div>
                 </div>
                 <button type="button" id="overview-book-btn" className="dk-cta-btn" onClick={() => setView("book")}>
@@ -427,7 +427,7 @@ export default function PatientDashboard() {
                 <div>
                   <p className="dk-welcome-label">Appointments</p>
                   <p className="dk-welcome-title">Book and manage visits in one place</p>
-                  <p className="dk-welcome-sub">Your upcoming and past bookings with Dr. Kharyl Dence at The Klinique.</p>
+                  <p className="dk-welcome-sub">Your upcoming and past bookings with Dr. Kharyl at The Klinique.</p>
                 </div>
                 <button type="button" className="dk-cta-btn" onClick={() => setView("book")}>
                   <i className="fa-solid fa-calendar-plus" /> Book Now
@@ -444,7 +444,7 @@ export default function PatientDashboard() {
                 <div>
                   <p className="dk-welcome-label">Documents</p>
                   <p className="dk-welcome-title">Medical Documents</p>
-                  <p className="dk-welcome-sub">Consents, prescriptions and clinical files shared by Dr. Kharyl Dence.</p>
+                  <p className="dk-welcome-sub">Consents, prescriptions and clinical files shared by Dr. Kharyl.</p>
                 </div>
               </div>
               <div className="dk-empty">

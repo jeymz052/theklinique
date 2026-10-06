@@ -34,7 +34,7 @@ const TERMS_SECTIONS = [
   },
   {
     title: "3. Medical Disclaimer",
-    body: "All treatments at The Klinique are medical procedures performed by Dr. Kharyl Dence, Medical and Aesthetic Doctor. Results may vary between individuals. A thorough consultation is required before any treatment. We reserve the right to decline any service if deemed medically inappropriate.",
+    body: "All treatments at The Klinique are medical procedures performed by Dr. Kharyl, Medical and Aesthetic Doctor. Results may vary between individuals. A thorough consultation is required before any treatment. We reserve the right to decline any service if deemed medically inappropriate.",
   },
   {
     title: "4. Booking & Appointments",

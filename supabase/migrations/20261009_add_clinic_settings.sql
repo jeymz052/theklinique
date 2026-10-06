@@ -2,7 +2,7 @@
 create table if not exists public.clinic_settings (
   id smallint primary key default 1 check (id = 1),
   clinic_name text not null default 'The Klinique',
-  doctor_name text not null default 'Dr. Kharyl Dence',
+  doctor_name text not null default 'Dr. Kharyl',
   contact_email text not null default 'thekliniqueinfo@gmail.com',
   contact_phone text not null default '+63 956 003 1916',
   address text not null default '',

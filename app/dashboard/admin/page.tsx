@@ -533,7 +533,7 @@ export default function AdminDashboard() {
                     <div className="dk-info-row"><span>In-Person Clinic:</span><strong>9:00 AM – 5:00 PM</strong></div>
                     <div className="dk-info-row"><span>Virtual Consult:</span><strong>8:00 AM – 8:00 PM</strong></div>
                     <div className="dk-info-row"><span>Walk-ins:</span><strong>Not Accepted</strong></div>
-                    <div className="dk-info-row"><span>Attending Physician:</span><strong>Dr. Kharyl Dence, MD</strong></div>
+                    <div className="dk-info-row"><span>Attending Physician:</span><strong>Dr. Kharyl</strong></div>
                   </div>
                 </div>
               </div>

@@ -319,8 +319,8 @@ export default function Home() {
 
       {/* ── MEET THE DOCTOR ── */}
       <section className="landing-doctor-section" id="doctor" style={{order:sectionOrder("doctor")}}>
-        <div className="landing-doctor-copy"><p className="section-label landing-script-accent">{content?.doctorEyebrow || "Meet Your Doctor"}</p><h2>{content?.doctorName || "Dr. Kharyl Dence"}</h2><h3>{content?.doctorTitle || "Medical and Aesthetic Doctor"}</h3><p>{content?.doctorBio || "Doctor-led, evidence-based aesthetic care shaped around your goals, comfort, and natural features."}</p><button type="button" className="btn-primary" onClick={() => setBookingOpen(true)}><i className="fa-solid fa-calendar-plus" /> Book with Dr. Kharyl</button></div>
-        <div className="landing-doctor-photo">{content?.doctorPhoto ? <img src={content.doctorPhoto} alt={content.doctorName || "Dr. Kharyl Dence"} /> : <div><i className="fa-solid fa-user-doctor" /><span>Doctor photo can be uploaded in Settings → Website</span></div>}</div>
+        <div className="landing-doctor-copy"><p className="section-label landing-script-accent">{content?.doctorEyebrow || "Meet Your Doctor"}</p><h2>{content?.doctorName || "Dr. Kharyl"}</h2><h3>{content?.doctorTitle || "Medical and Aesthetic Doctor"}</h3><p>{content?.doctorBio || "Doctor-led, evidence-based aesthetic care shaped around your goals, comfort, and natural features."}</p><button type="button" className="btn-primary" onClick={() => setBookingOpen(true)}><i className="fa-solid fa-calendar-plus" /> Book with Dr. Kharyl</button></div>
+        <div className="landing-doctor-photo">{content?.doctorPhoto ? <img src={content.doctorPhoto} alt={content.doctorName || "Dr. Kharyl"} /> : <div><i className="fa-solid fa-user-doctor" /><span>Doctor photo can be uploaded in Settings → Website</span></div>}</div>
       </section>
 
       {/* ── SIGNATURE SERVICES ── */}
