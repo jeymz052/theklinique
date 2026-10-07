@@ -17,6 +17,7 @@ import AccountHelpHub from "@/app/components/AccountHelpHub";
 import PatientPaymentsPage from "@/app/components/PatientPaymentsPage";
 import BasicSettingsWorkspace from "@/app/components/BasicSettingsWorkspace";
 import ClinicCalendar from "@/app/components/ClinicCalendar";
+import { blockedDateAnnouncement, groupBlockedDates, type PublicBlockedDate } from "@/lib/blockedDates";
 
 type NavSection = "portal" | "appointments";
 type PatientView = "overview" | "documents" | "history" | "book" | "my-appts" | "calendar" | "payments" | "account-help" | "profile" | "settings";
@@ -36,6 +37,7 @@ export default function PatientDashboard() {
   const [payingAppointmentId, setPayingAppointmentId] = useState<string | null>(null);
   const [bookingServiceSlug, setBookingServiceSlug] = useState<string | null>(null);
   const [bookingParentId, setBookingParentId] = useState<string | null>(null);
+  const [blockedDates, setBlockedDates] = useState<PublicBlockedDate[]>([]);
 
   const verifyReturnedPayment = useCallback(async function verifyPayment(appointmentId: string | null, attempt = 0) {
     try {
@@ -74,6 +76,21 @@ export default function PatientDashboard() {
       return () => window.clearInterval(interval);
     }
   }, [authLoading, user]);
+
+  useEffect(() => {
+    if (!user) return;
+    const controller = new AbortController();
+    fetch("/api/blocked-dates", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Unable to load clinic announcements.");
+        setBlockedDates(result.blocks || []);
+      })
+      .catch((error) => {
+        if (!(error instanceof DOMException && error.name === "AbortError")) setBlockedDates([]);
+      });
+    return () => controller.abort();
+  }, [user]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -161,6 +178,7 @@ export default function PatientDashboard() {
     (user?.email ? user.email.split("@")[0] : "Patient");
 
   const upcomingAppointments = appointments.filter((appointment) => appointment.status === "confirmed" && appointment.date >= new Date().toISOString().slice(0, 10));
+  const blockedPeriods = groupBlockedDates(blockedDates);
   const stats = [
     { icon: "fa-calendar-check",  label: "Appointments",    value: String(appointments.length), sub: `${upcomingAppointments.length} upcoming` },
     { icon: "fa-notes-medical",   label: "Released Notes",  value: "0", sub: "Allowed by doctor"    },
@@ -312,15 +330,15 @@ export default function PatientDashboard() {
         <div className="dk-body">
           {dataError && view !== "book" && <p className="bk-form-error" role="alert">{dataError}</p>}
           {bookingNotice && <div className="dk-booking-notice" role="status"><i className="fa-solid fa-circle-info" /><span>{bookingNotice}</span><button type="button" onClick={() => setBookingNotice("")} aria-label="Dismiss"><i className="fa-solid fa-xmark" /></button></div>}
-          {!dismissedBanner && view !== "book" && (
-            <div className="dk-notice-banner">
+          {!dismissedBanner && blockedPeriods.length > 0 && view !== "book" && (
+            <div className="dk-notice-banner dk-notice-banner--blocked" role="status">
               <div className="dk-notice-left">
                 <div className="dk-notice-icon"><i className="fa-solid fa-triangle-exclamation" /></div>
                 <div>
-                  <p className="dk-notice-title">Walk-ins not accepted — <strong>By Appointment Only</strong></p>
+                  <p className="dk-notice-title">Doctor availability announcement</p>
                   <p className="dk-notice-sub">
-                    The Klinique operates strictly by appointment. Book online or contact us to schedule your visit.{" "}
-                    <button className="dk-notice-link" onClick={() => setView("book")}>Book now ?</button>
+                    {blockedPeriods.map(blockedDateAnnouncement).join(" ")} Please choose another available date.{" "}
+                    <button className="dk-notice-link" onClick={() => setView("book")}>View available dates</button>
                   </p>
                 </div>
               </div>

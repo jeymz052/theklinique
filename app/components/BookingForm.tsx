@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { RESERVATION_FEE_LABEL } from "@/lib/reservation";
 import type { BookingSlot } from "@/lib/bookingAvailability";
+import { blockedDatePeriodLabel, groupBlockedDates, type PublicBlockedDate } from "@/lib/blockedDates";
 
 /* ─── Data ─────────────────────────────────────────────── */
 const SERVICES = [
@@ -194,6 +195,9 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
   const [availabilityHours, setAvailabilityHours] = useState("");
   const [availabilityMessage, setAvailabilityMessage] = useState("Select a date to view all hourly slots.");
   const [availabilityLoading, setAvailabilityLoading] = useState(false);
+  const [blockedDates, setBlockedDates]     = useState<PublicBlockedDate[]>([]);
+  const [upcomingBlockedDates, setUpcomingBlockedDates] = useState<PublicBlockedDate[]>([]);
+  const [dismissedBlockedBanner, setDismissedBlockedBanner] = useState(false);
   const [submitting, setSubmitting]       = useState(false);
   const [submitError, setSubmitError]     = useState("");
   const [policyModal, setPolicyModal]     = useState<BookingPolicy | null>(null);
@@ -240,8 +244,39 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
   const question=(key:string,fallback:{label:string;placeholder?:string})=>{const found=intakeQuestions.find(item=>item.system_key===key);return{label:found?.label||fallback.label,placeholder:found?.placeholder||fallback.placeholder||""}};
   const visibleCustomQuestions=intakeQuestions.filter(item=>!item.system_key&&(item.applies_to==="both"||item.applies_to===bookingType));
   const customRequiredComplete=visibleCustomQuestions.every(item=>!item.required||Boolean(customAnswers[item.id]?.trim()));
+  const blockedPeriods = groupBlockedDates(upcomingBlockedDates);
 
   useEffect(()=>{void fetch("/api/intake-questions").then(r=>r.ok?r.json():{questions:[]}).then(x=>setIntakeQuestions(x.questions||[]))},[]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/blocked-dates", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Unable to load clinic announcements.");
+        setUpcomingBlockedDates(result.blocks || []);
+      })
+      .catch((error) => {
+        if (!(error instanceof DOMException && error.name === "AbortError")) setUpcomingBlockedDates([]);
+      });
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    const start = `${calYear}-${String(calMonth + 1).padStart(2, "0")}-01`;
+    const end = `${calYear}-${String(calMonth + 1).padStart(2, "0")}-${String(daysInMonth).padStart(2, "0")}`;
+    const controller = new AbortController();
+    fetch(`/api/blocked-dates?start=${start}&end=${end}`, { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Unable to load blocked dates.");
+        setBlockedDates(result.blocks || []);
+      })
+      .catch((error) => {
+        if (!(error instanceof DOMException && error.name === "AbortError")) setBlockedDates([]);
+      });
+    return () => controller.abort();
+  }, [calMonth, calYear, daysInMonth]);
 
   useEffect(() => {
     fetch("/api/booking-catalog")
@@ -627,6 +662,23 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
 
   /* ─── Success screen ─────────────────────────────────── */
   /* ─── Main render ─────────────────────────────────────── */
+  const compactBlockedAnnouncement = !dismissedBlockedBanner && blockedPeriods.length > 0 ? (
+    <div className="bk-blocked-announcement" role="status">
+      <span className="bk-blocked-announcement-icon"><i className="fa-solid fa-calendar-xmark" /></span>
+      <div className="bk-blocked-announcement-content">
+        <strong>Schedule advisory</strong>
+        {blockedPeriods.map((period) => (
+          <p key={`${period.start}-${period.end}-${period.reason || "unavailable"}`}>
+            <span>Dr. Kharyl is not available {period.start === period.end ? "on" : "from"}</span>
+            <b>{blockedDatePeriodLabel(period)}</b>
+            {period.reason && <span>({period.reason})</span>}
+          </p>
+        ))}
+      </div>
+      <button type="button" onClick={() => setDismissedBlockedBanner(true)} aria-label="Dismiss availability announcement"><i className="fa-solid fa-xmark" /></button>
+    </div>
+  ) : null;
+
   return (
     <div className={embedded ? "bk-embedded" : isModal ? "bk-modal-inner" : "bk-standalone"}>
       {policyModal && <BookingPolicyModal type={policyModal} onClose={() => setPolicyModal(null)} />}
@@ -665,6 +717,7 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
               </p>
             </div>
           </div>
+          {compactBlockedAnnouncement}
           {onClose && (
             <button type="button" className="bk-modal-close-btn" onClick={onClose} aria-label="Close booking">
               <i className="fa-solid fa-xmark" />
@@ -689,8 +742,11 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
               Dr. Kharyl
             </p>
           </div>
+          {compactBlockedAnnouncement}
         </div>
       )}
+
+      {embedded && compactBlockedAnnouncement}
 
       {/* ── Step indicator ── */}
       <div className="bk-steps-bar">
@@ -1019,16 +1075,20 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
                   {Array.from({ length: daysInMonth }).map((_, i) => {
                     const day     = i + 1;
                     const dateStr = `${MONTHS[calMonth]} ${day}, ${calYear}`;
+                    const isoDate = `${calYear}-${String(calMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+                    const block   = blockedDates.find((item) => item.blocked_date === isoDate);
                     const past    = isDatePast(day);
                     return (
                       <button
                         key={day}
                         id={`cal-day-${day}`}
                         type="button"
-                        className={`bk-cal-day ${selectedDate === dateStr ? "selected" : ""} ${past ? "past" : ""}`}
-                        disabled={past}
+                        className={`bk-cal-day ${selectedDate === dateStr ? "selected" : ""} ${past ? "past" : ""} ${block ? "blocked" : ""}`}
+                        disabled={past || Boolean(block)}
+                        title={block ? block.reason || "Dr. Kharyl is not available on this date." : undefined}
+                        aria-label={block ? `${dateStr}, blocked${block.reason ? `: ${block.reason}` : ""}` : dateStr}
                         onClick={() => {
-                          if (past) return;
+                          if (past || block) return;
                           setSelectedDate(dateStr);
                           setSelectedTime(null);
                           setTimeSlots([]);
@@ -1037,7 +1097,8 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
                           setAvailabilityLoading(true);
                         }}
                       >
-                        {day}
+                        <span>{day}</span>
+                        {block && <small>Blocked</small>}
                       </button>
                     );
                   })}
