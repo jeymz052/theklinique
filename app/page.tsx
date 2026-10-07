@@ -6,7 +6,7 @@ import Image from "next/image";
 import Link from "next/link";
 import BookingForm from "@/app/components/BookingForm";
 import LandingContactForm from "@/app/components/LandingContactForm";
-import { DEFAULT_NAVIGATION_ORDER, DEFAULT_SERVICE_ICONS, type ContentTab, type LandingContent, type LandingMedia } from "@/app/components/WebsiteContentManager";
+import { DEFAULT_NAVIGATION_ORDER, DEFAULT_SERVICE_ICONS, normalizeLandingFont, type ContentTab, type LandingContent, type LandingMedia } from "@/app/components/WebsiteContentManager";
 import { FEATURED_FACEBOOK_REEL, getInstagramEmbedUrl, isEmbeddableFacebookPost, isFacebookVideo, normalizeFacebookPostUrl } from "@/lib/landing-social";
 import type { BlogPost } from "@/lib/blog";
 
@@ -38,6 +38,8 @@ export default function Home() {
   const [heroSlide, setHeroSlide] = useState(0);
   const heroMedia = content?.heroMedia || [];
   const activeHeroSlide = heroMedia.length ? heroSlide % heroMedia.length : 0;
+  const textFont=(key:string)=>{const font=normalizeLandingFont(content?.textFonts?.[key]);return font==="default"?"":` text-font-${font}`};
+  const dynamicFontCss=Object.entries(content?.textFonts||{}).flatMap(([key,value])=>{const font=normalizeLandingFont(value),families={elegant:"'Cormorant Garamond',Georgia,serif",modern:"'Jost',Arial,sans-serif",cursive:"'Allura','Segoe Script','Brush Script MT',cursive",classic:"Georgia,'Times New Roman',serif",clean:"Arial,Helvetica,sans-serif",default:""},family=families[font];if(!family)return[];let selector="";let match=key.match(/^service\.(\d+)\.(name|tagline)$/);if(match)selector=`.services-grid .service-card:nth-child(${Number(match[1])+1}) .service-card-${match[2]}`;match=key.match(/^serviceIcon\.(\d+)\.name$/);if(match)selector=`.services-bar .service-icon-item:nth-child(${Number(match[1])+1}) .service-icon-name`;match=key.match(/^social\.(\d+)\.title$/);if(match)selector=`.landing-social-posts article:nth-child(${Number(match[1])+1}) header span,.landing-social-posts article:nth-child(${Number(match[1])+1}) strong`;match=key.match(/^faq\.(\d+)\.(question|answer)$/);if(match)selector=`.landing-faq-list details:nth-child(${Number(match[1])+1}) ${match[2]==="question"?"summary":"p"}`;match=key.match(/^gallery\.(\d+)\.title$/);if(match){const index=Number(match[1])+1,count=content?.galleryMedia?.length||0;selector=`.landing-results-track .landing-result-card:nth-child(${index}) h3,.landing-results-track .landing-result-card:nth-child(${index+count}) h3`}return selector?[`${selector}{font-family:${family}!important}`]:[]}).join("\n");
   const openBooking = (categoryHint: string | null = null) => {
     setBookingCatalogView("treatments");
     setBookingServiceSlug(null);
@@ -150,6 +152,7 @@ export default function Home() {
   }, new Map<string, { category: string; count: number; fromPrice: number }>()).values());
   return (
     <div className={`landing-page ${compactViewport ? "landing-page--compact" : ""}`}>
+      {dynamicFontCss&&<style>{dynamicFontCss}</style>}
       {/* ── BOOKING MODAL ── */}
       {bookingOpen && (
         <div
@@ -217,15 +220,15 @@ export default function Home() {
         <div className="hero-overlay" />
 
         <div className="hero-content">
-          <p className="hero-tag">
+          <p className={`hero-tag${textFont("heroEyebrow")}`}>
             <span />
             {content?.heroEyebrow || "Skin · Aesthetics · Wellness"}
           </p>
 
-          <h1 className="landing-script-accent">{(content?.heroTitle || "Your Unique Beauty in Mind.").split(/(unique)/i).map((part, index) => /^unique$/i.test(part) ? <em key={index}>{part}</em> : part)}</h1>
+          <h1 className={`landing-script-accent${textFont("heroTitle")}`}>{(content?.heroTitle || "Your Unique Beauty in Mind.").split(/(unique)/i).map((part, index) => /^unique$/i.test(part) ? <em key={index}>{part}</em> : part)}</h1>
 
-          <p className="hero-sub">{content?.heroSubtitle || "Expert care. Natural results. A more confident you."}</p>
-          <p className="hero-desc">{content?.heroDescription || "At The Klinique, we combine medical expertise with a personalized approach to help you look and feel your best — inside and out."}</p>
+          <p className={`hero-sub${textFont("heroSubtitle")}`}>{content?.heroSubtitle || "Expert care. Natural results. A more confident you."}</p>
+          <p className={`hero-desc${textFont("heroDescription")}`}>{content?.heroDescription || "At The Klinique, we combine medical expertise with a personalized approach to help you look and feel your best — inside and out."}</p>
 
           <button
             type="button"
@@ -285,9 +288,9 @@ export default function Home() {
             backgroundPosition: "center",
           }}
         >
-          <p className="section-label">{content?.aboutEyebrow || "A Personalized Approach"}</p>
-          <h2>{content?.aboutTitle || "Where Science Meets Self-Care"}</h2>
-          <p>{content?.aboutBody || "We believe true beauty is unique to you. Our treatments are doctor-led, evidence-based, and tailored to your goals — for natural, refined results that enhance, not change, who you are."}</p>
+          <p className={`section-label${textFont("aboutEyebrow")}`}>{content?.aboutEyebrow || "A Personalized Approach"}</p>
+          <h2 className={textFont("aboutTitle")}>{content?.aboutTitle || "Where Science Meets Self-Care"}</h2>
+          <p className={textFont("aboutBody")}>{content?.aboutBody || "We believe true beauty is unique to you. Our treatments are doctor-led, evidence-based, and tailored to your goals — for natural, refined results that enhance, not change, who you are."}</p>
 
           <div className="about-pillars">
             {[
@@ -319,14 +322,14 @@ export default function Home() {
 
       {/* ── MEET THE DOCTOR ── */}
       <section className="landing-doctor-section" id="doctor" style={{order:sectionOrder("doctor")}}>
-        <div className="landing-doctor-copy"><p className="section-label landing-script-accent">{content?.doctorEyebrow || "Meet Your Doctor"}</p><h2>{content?.doctorName || "Dr. Kharyl"}</h2><h3>{content?.doctorTitle || "Medical and Aesthetic Doctor"}</h3><p>{content?.doctorBio || "Doctor-led, evidence-based aesthetic care shaped around your goals, comfort, and natural features."}</p><button type="button" className="btn-primary" onClick={() => setBookingOpen(true)}><i className="fa-solid fa-calendar-plus" /> Book with Dr. Kharyl</button></div>
+        <div className="landing-doctor-copy"><p className={`section-label landing-script-accent${textFont("doctorEyebrow")}`}>{content?.doctorEyebrow || "Meet Your Doctor"}</p><h2 className={textFont("doctorName")}>{content?.doctorName || "Dr. Kharyl"}</h2><h3 className={textFont("doctorTitle")}>{content?.doctorTitle || "Medical and Aesthetic Doctor"}</h3><p className={textFont("doctorBio")}>{content?.doctorBio || "Doctor-led, evidence-based aesthetic care shaped around your goals, comfort, and natural features."}</p><button type="button" className="btn-primary" onClick={() => setBookingOpen(true)}><i className="fa-solid fa-calendar-plus" /> Book with Dr. Kharyl</button></div>
         <div className="landing-doctor-photo">{content?.doctorPhoto ? <img src={content.doctorPhoto} alt={content.doctorName || "Dr. Kharyl"} /> : <div><i className="fa-solid fa-user-doctor" /><span>Doctor photo can be uploaded in Settings → Website</span></div>}</div>
       </section>
 
       {/* ── SIGNATURE SERVICES ── */}
       <section className="services-section" id="services" style={{order:sectionOrder("services",1)}}>
         <div className="section-header">
-          <div className="section-header-left"><p className="section-label">{content?.servicesEyebrow || "Our Signature Services"}</p><h2>{content?.servicesTitle || "What We Do Best"}</h2></div>
+          <div className="section-header-left"><p className={`section-label${textFont("servicesEyebrow")}`}>{content?.servicesEyebrow || "Our Signature Services"}</p><h2 className={textFont("servicesTitle")}>{content?.servicesTitle || "What We Do Best"}</h2></div>
           <button type="button" className="view-all" id="view-all-services-btn" aria-expanded={showAllServices} onClick={() => setShowAllServices(current => !current)}>{showAllServices ? "Show fewer services" : "View all services"} <i className={`fa-solid ${showAllServices ? "fa-arrow-up" : "fa-arrow-down"}`} /></button>
         </div>
         <div className="services-grid">
@@ -341,11 +344,11 @@ export default function Home() {
       </section>
 
       {/* ── MOVING RESULTS GALLERY ── */}
-      {(content?.galleryMedia?.length || 0) > 0 && <LandingResultsBoard items={content!.galleryMedia} eyebrow={content?.galleryEyebrow} title={content?.galleryTitle} description={content?.galleryDescription} badge={content?.galleryBadge} order={sectionOrder("gallery")}/>}
+      {(content?.galleryMedia?.length || 0) > 0 && <LandingResultsBoard items={content!.galleryMedia} eyebrow={content?.galleryEyebrow} title={content?.galleryTitle} description={content?.galleryDescription} badge={content?.galleryBadge} textFonts={content?.textFonts} order={sectionOrder("gallery")}/>}
 
       {/* ── GALLERY ── */}
       <section className="quote-banner" id={(content?.galleryMedia?.length || 0) ? "gallery-message" : "gallery"} style={{ backgroundImage: "url('/images/banner background.png')", backgroundSize: "cover", backgroundPosition: "center", order:sectionOrder("gallery",1) }}>
-        <div className="quote-banner-text-group"><p className="quote-text landing-script-accent">&ldquo;{content?.quoteText || "Healthy skin is a form of self-care."}&rdquo;</p><p className="quote-sub">{content?.quoteSubtitle || "Confidence · Wellness · A Brighter You"}</p></div>
+        <div className="quote-banner-text-group"><p className={`quote-text landing-script-accent${textFont("quoteText")}`}>&ldquo;{content?.quoteText || "Healthy skin is a form of self-care."}&rdquo;</p><p className={`quote-sub${textFont("quoteSubtitle")}`}>{content?.quoteSubtitle || "Confidence · Wellness · A Brighter You"}</p></div>
         <button type="button" className="btn-book quote-book-btn" id="quote-book-btn" onClick={() => openBooking()}><i className="fa-solid fa-calendar-plus" /> Book Now</button>
       </section>
 
@@ -356,7 +359,7 @@ export default function Home() {
       <section className="landing-social-feature" id="socials" style={{order:sectionOrder("social")}}>
         <div className="landing-social-copy">
           <p className="section-label">Social Updates</p>
-          <h2 className="landing-script-accent">{content?.socialHeading || "Latest from The Klinique"}</h2>
+          <h2 className={`landing-script-accent${textFont("socialHeading")}`}>{content?.socialHeading || "Latest from The Klinique"}</h2>
           <p>See clinic announcements, treatment education, and our latest updates.</p>
           <div className="landing-social-links">
             {content?.facebookPageUrl && <a href={content.facebookPageUrl} target="_blank" rel="noopener noreferrer"><i className="fa-brands fa-facebook-f" /> Facebook</a>}
@@ -379,8 +382,8 @@ export default function Home() {
       </section>
 
       <div className="contact-strip" style={{order:sectionOrder("social",1)}}>
-        <div className="contact-item"><i className="fa-solid fa-location-dot" /><span>{content?.address || "Cagayan de Oro City, PH 9000"}</span></div>
-        <div className="contact-item"><i className="fa-regular fa-clock" /><span>{content?.clinicHours || "By Appointment Only"}</span></div>
+        <div className="contact-item"><i className="fa-solid fa-location-dot" /><span className={textFont("address")}>{content?.address || "Cagayan de Oro City, PH 9000"}</span></div>
+        <div className="contact-item"><i className="fa-regular fa-clock" /><span className={textFont("clinicHours")}>{content?.clinicHours || "By Appointment Only"}</span></div>
         <a href="https://www.instagram.com/thekliniqueph?igsh=MXQwcTRubjJ1MWd3&utm_source=qr&fbclid=IwY2xjawUm8flleHRuA2FlbQIxMABwZG9mBWJyaWQRMVd1ekpOMUpNQkJnVGMyeExzcnRjBmFwcF9pZBAyMjIwMzkxNzg4MjAwODkyAAEeabqHRNs5LxfdN_ea_rT-vNkzsb9-p2qlISX0fB-bQB4J2kXiqqNnl0sr47U_aem_1VdrPw10C7rUT1kHJ5sMAg" target="_blank" rel="noopener noreferrer" className="contact-item"><i className="fa-brands fa-instagram" /><span>@thekliniqueph · The Klinique by Dr. Kharyl</span></a>
         <a href="https://web.facebook.com/profile.php?id=61592051454777" target="_blank" rel="noopener noreferrer" className="contact-item"><i className="fa-brands fa-facebook-f" /><span>The Klinique by Dr. Kharyl</span></a>
       </div>
@@ -394,12 +397,12 @@ export default function Home() {
       {/* ── CONTACT ── */}
       <section className="landing-contact" id="contact" style={{order:sectionOrder("contact")}}>
         <div className="landing-contact-inner"><div className="landing-contact-details">
-          <p className="section-label">{content?.contactEyebrow || "Contact The Klinique"}</p><h2>{content?.contactTitle || "Let’s talk about your goals"}</h2><p>{content?.contactBody || "Send a message for treatment questions, package inquiries, or help with an existing appointment."}</p>
+          <p className={`section-label${textFont("contactEyebrow")}`}>{content?.contactEyebrow || "Contact The Klinique"}</p><h2 className={textFont("contactTitle")}>{content?.contactTitle || "Let’s talk about your goals"}</h2><p className={textFont("contactBody")}>{content?.contactBody || "Send a message for treatment questions, package inquiries, or help with an existing appointment."}</p>
           <div className="landing-contact-list">
-            <a href={`tel:${(content?.phone || "+63 956 003 1916").replace(/[^+\d]/g, "")}`}><span><i className="fa-solid fa-phone" /></span><div><small>Call or text</small><strong>{content?.phone || "+63 956 003 1916"}</strong></div><i className="fa-solid fa-arrow-up-right-from-square" /></a>
-            <a href={`mailto:${content?.email || "thekliniqueinfo@gmail.com"}`}><span><i className="fa-solid fa-envelope" /></span><div><small>Email</small><strong>{content?.email || "thekliniqueinfo@gmail.com"}</strong></div><i className="fa-solid fa-arrow-up-right-from-square" /></a>
-            <div><span><i className="fa-solid fa-location-dot" /></span><div><small>Clinic</small><strong>{content?.address || "Cagayan de Oro City, PH 9000"}</strong></div></div>
-            <div><span><i className="fa-regular fa-clock" /></span><div><small>Clinic hours</small><strong>{content?.clinicHours || "By appointment only"}</strong></div></div>
+            <a href={`tel:${(content?.phone || "+63 956 003 1916").replace(/[^+\d]/g, "")}`}><span><i className="fa-solid fa-phone" /></span><div><small>Call or text</small><strong className={textFont("phone")}>{content?.phone || "+63 956 003 1916"}</strong></div><i className="fa-solid fa-arrow-up-right-from-square" /></a>
+            <a href={`mailto:${content?.email || "thekliniqueinfo@gmail.com"}`}><span><i className="fa-solid fa-envelope" /></span><div><small>Email</small><strong className={textFont("email")}>{content?.email || "thekliniqueinfo@gmail.com"}</strong></div><i className="fa-solid fa-arrow-up-right-from-square" /></a>
+            <div><span><i className="fa-solid fa-location-dot" /></span><div><small>Clinic</small><strong className={textFont("address")}>{content?.address || "Cagayan de Oro City, PH 9000"}</strong></div></div>
+            <div><span><i className="fa-regular fa-clock" /></span><div><small>Clinic hours</small><strong className={textFont("clinicHours")}>{content?.clinicHours || "By appointment only"}</strong></div></div>
           </div>
           <div className="landing-socials"><a href="https://www.instagram.com/thekliniqueph?igsh=MXQwcTRubjJ1MWd3&utm_source=qr&fbclid=IwY2xjawUm8flleHRuA2FlbQIxMABwZG9mBWJyaWQRMVd1ekpOMUpNQkJnVGMyeExzcnRjBmFwcF9pZBAyMjIwMzkxNzg4MjAwODkyAAEeabqHRNs5LxfdN_ea_rT-vNkzsb9-p2qlISX0fB-bQB4J2kXiqqNnl0sr47U_aem_1VdrPw10C7rUT1kHJ5sMAg" target="_blank" rel="noopener noreferrer"><i className="fa-brands fa-instagram" /> Instagram</a><a href="https://web.facebook.com/profile.php?id=61592051454777" target="_blank" rel="noopener noreferrer"><i className="fa-brands fa-facebook-f" /> Facebook</a></div>
         </div>
@@ -419,7 +422,7 @@ export default function Home() {
           <div className="footer-divider" aria-hidden="true" />
           <nav className="footer-nav" aria-label="Footer navigation"><a href="#home">Home</a><span className="footer-nav-sep">|</span><a href="#about">About</a><span className="footer-nav-sep">|</span><a href="#services">Services</a><span className="footer-nav-sep">|</span><a href="#gallery">Gallery</a><span className="footer-nav-sep">|</span><a href="#blog">Blogs</a><span className="footer-nav-sep">|</span><a href="#socials">Socials</a><span className="footer-nav-sep">|</span><a href="#faq">FAQ</a><span className="footer-nav-sep">|</span><a href="#contact">Contact</a></nav>
           <div className="footer-divider" aria-hidden="true" />
-          <div className="footer-newsletter"><p className="footer-newsletter-label">Be part of our community</p><form className="newsletter-form" id="newsletter-form" onSubmit={(event) => event.preventDefault()}><input type="email" placeholder="Your email address" aria-label="Email address for newsletter" id="newsletter-email" /><button type="submit" aria-label="Subscribe">→</button></form><p className="footer-script-tagline landing-script-accent">{content?.footerTagline || "Your unique beauty in mind."}</p></div>
+          <div className="footer-newsletter"><p className="footer-newsletter-label">Be part of our community</p><form className="newsletter-form" id="newsletter-form" onSubmit={(event) => event.preventDefault()}><input type="email" placeholder="Your email address" aria-label="Email address for newsletter" id="newsletter-email" /><button type="submit" aria-label="Subscribe">→</button></form><p className={`footer-script-tagline landing-script-accent${textFont("footerTagline")}`}>{content?.footerTagline || "Your unique beauty in mind."}</p></div>
         </div>
         <div className="footer-contact-row"><a href="tel:+639560031916"><i className="fa-solid fa-phone" /> +63 956 003 1916</a><a href="mailto:thekliniqueinfo@gmail.com"><i className="fa-solid fa-envelope" /> thekliniqueinfo@gmail.com</a><span><i className="fa-solid fa-location-dot" /> Cagayan de Oro City</span><a href="https://www.instagram.com/thekliniqueph?igsh=MXQwcTRubjJ1MWd3&utm_source=qr" target="_blank" rel="noopener noreferrer"><i className="fa-brands fa-instagram" /> @thekliniqueph</a><a href="https://web.facebook.com/profile.php?id=61592051454777" target="_blank" rel="noopener noreferrer"><i className="fa-brands fa-facebook-f" /> Facebook</a></div>
         <div className="footer-bottom"><div className="footer-bottom-left"><span>© 2026 The Klinique. All rights reserved.</span><span className="footer-nav-sep">|</span><Link href="/terms">Terms &amp; Conditions</Link><span className="footer-nav-sep">|</span><Link href="/cancellation-policy">Cancellation Policy</Link><span className="footer-nav-sep">|</span><Link href="/auth">Patient Portal</Link></div></div>
@@ -428,9 +431,10 @@ export default function Home() {
   );
 }
 
-function LandingResultsBoard({items,eyebrow,title,description,badge,order}:{items:LandingMedia[];eyebrow?:string;title?:string;description?:string;badge?:string;order?:number}) {
+function LandingResultsBoard({items,eyebrow,title,description,badge,textFonts,order}:{items:LandingMedia[];eyebrow?:string;title?:string;description?:string;badge?:string;textFonts?:LandingContent["textFonts"];order?:number}) {
+  const font=(key:string)=>{const selected=normalizeLandingFont(textFonts?.[key]);return selected==="default"?"":`text-font-${selected}`};
   return <section className="landing-media-gallery landing-results-board" id="gallery" style={{order}}>
-    <header><div><p className="section-label">{eyebrow||"Before & After"}</p><h2>{title||"Featured Results"}</h2><span>{description||"Aesthetic transformations and clinic stories."}</span></div><strong>{badge||"Results Board"}</strong></header>
+    <header><div><p className={`section-label ${font("galleryEyebrow")}`}>{eyebrow||"Before & After"}</p><h2 className={font("galleryTitle")}>{title||"Featured Results"}</h2><span className={font("galleryDescription")}>{description||"Aesthetic transformations and clinic stories."}</span></div><strong className={font("galleryBadge")}>{badge||"Results Board"}</strong></header>
     <div className="landing-results-viewport"><div className={`landing-results-track ${items.length===1?"is-single":""}`}>
       {[...items,...items].map((item,index)=>{const originalIndex=index%items.length;const duplicate=index>=items.length;return <article className="landing-result-card" key={`${duplicate?"copy":"original"}-${item.url}-${originalIndex}`} aria-hidden={duplicate||undefined}><header><div><span>Aesthetic Results</span><h3>{item.title?.trim()||`Featured result ${originalIndex+1}`}</h3></div><small>Case {String(originalIndex+1).padStart(2,"0")}</small></header><div className="landing-result-media">{item.type==="video"?<video src={item.url} controls={!duplicate} autoPlay muted loop playsInline/>:<img src={item.url} alt={duplicate?"":item.alt}/>}</div></article>})}
     </div></div>

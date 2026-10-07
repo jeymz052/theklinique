@@ -14,6 +14,24 @@
   --text-body: #5a4a4a;
 }
 
+/* Each editable landing-page text can have its own published font. */
+.text-font-elegant,.landing-page .text-font-elegant { font-family:'Cormorant Garamond',Georgia,serif!important; }
+.text-font-modern,.landing-page .text-font-modern { font-family:'Jost',Arial,sans-serif!important; }
+.text-font-cursive,.landing-page .text-font-cursive { font-family:'Allura','Segoe Script','Brush Script MT',cursive!important; }
+.text-font-classic,.landing-page .text-font-classic { font-family:Georgia,'Times New Roman',serif!important; }
+.text-font-clean,.landing-page .text-font-clean { font-family:Arial,Helvetica,sans-serif!important; }
+.website-field-heading { display:flex; align-items:center; justify-content:space-between; gap:.6rem; }
+.website-font-picker { position:relative; display:inline-flex; align-items:center; min-width:112px; min-height:28px; overflow:hidden; border:1px solid #dfcbd2; border-radius:8px; background:#fff7fa; color:#a84462; }
+.website-font-picker i { position:absolute; left:.55rem; z-index:1; pointer-events:none; font-size:.58rem; }
+.website-font-picker select { width:100%; min-height:28px; padding:.25rem .35rem .25rem 1.55rem; border:0; background:transparent; color:#7a4d5b; font:800 .52rem 'Jost',sans-serif; cursor:pointer; outline:none; }
+.website-font-picker:focus-within { border-color:#c45172; box-shadow:0 0 0 3px #f8e3e9; }
+.website-repeated-fonts { padding:1rem 1.2rem; border:1px solid #eadce1; border-radius:14px; background:#fff8fa; }
+.website-repeated-fonts>strong { display:flex; align-items:center; gap:.5rem; margin-bottom:.75rem; color:#5b3d48; font-size:.68rem; }
+.website-repeated-fonts>strong i { color:#b94c6b; }
+.website-repeated-fonts>div { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:.55rem; }
+.website-repeated-fonts label { display:flex; align-items:center; justify-content:space-between; gap:.5rem; min-width:0; padding:.45rem .55rem; border:1px solid #eddde2; border-radius:9px; background:#fff; }
+.website-repeated-fonts label>span { overflow:hidden; color:#67505a; font-size:.55rem; font-weight:800; text-overflow:ellipsis; white-space:nowrap; }
+
 /* Draggable ordering for Website Content photos and videos */
 .website-media-list article { background:#fff; cursor:grab; transition:transform .16s,box-shadow .16s,opacity .16s; }
 .website-media-list article:hover { transform:translateY(-2px); box-shadow:0 8px 20px rgba(82,42,55,.1); }
