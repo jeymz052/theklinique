@@ -94,6 +94,10 @@ type Category = { id: string; name: string; slug: string; sort_order: number };
 type CatalogService = { id: string; category_id: string; subcategory: string; name: string; slug: string; description: string | null; price: number; price_note: string | null; duration_mins: number | null };
 type Product = { id: string; name: string; description: string | null; price: number; category: string; subcategory: string };
 
+function packageGroupKey(product: Product) {
+  return `${product.category}::${product.subcategory}`;
+}
+
 const FALLBACK_CATALOG = {
   categories: [{ id: "legacy", name: "Treatments", slug: "legacy", sort_order: 1 }],
   services: SERVICES.map((service) => ({ id: service.id, category_id: "legacy", subcategory: "General", name: service.name, slug: service.slug, description: service.desc, price: Number(service.price.replace(/[^0-9]/g, "")) || 0, price_note: null, duration_mins: null })),
@@ -171,6 +175,7 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
   const [categories, setCategories]       = useState<Category[]>([]);
   const [catalogServices, setCatalogServices] = useState<CatalogService[]>([]);
   const [products, setProducts]           = useState<Product[]>([]);
+  const [expandedPackageGroups, setExpandedPackageGroups] = useState<string[]>([]);
   const [cartProductIds, setCartProductIds] = useState<string[]>([]);
   const [cartTreatmentIds, setCartTreatmentIds] = useState<string[]>([]);
   const [catalogError, setCatalogError]   = useState("");
@@ -206,6 +211,21 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
   const isPackageOnly = service?.slug === PACKAGE_BOOKING_SERVICE_SLUG;
   const isConsultationFollowUp = service?.slug === "follow-up-check-up" && Boolean(parentAppointmentId);
   const cartProducts = products.filter((item) => cartProductIds.includes(item.id));
+  const packageGroups = products.reduce<Array<{ key: string; label: string; category: string; products: Product[] }>>((groups, product) => {
+    const key = packageGroupKey(product);
+    const existingGroup = groups.find((group) => group.key === key);
+    if (existingGroup) {
+      existingGroup.products.push(product);
+    } else {
+      groups.push({
+        key,
+        label: product.subcategory && product.subcategory !== "General" ? product.subcategory : product.category,
+        category: product.category,
+        products: [product],
+      });
+    }
+    return groups;
+  }, []);
   const cartTreatments = catalogServices.filter((item) => cartTreatmentIds.includes(item.id));
   const bookedTreatments = service && !isPackageOnly ? [service, ...cartTreatments] : [];
   const selectedCategoryRecord = categories.find((item) => item.id === service?.category_id);
@@ -231,6 +251,8 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
         setCategories(result.categories);
         setCatalogServices(result.services);
         setProducts(result.products);
+        const firstPackage = (result.products as Product[])[0];
+        if (firstPackage) setExpandedPackageGroups([packageGroupKey(firstPackage)]);
         if (initialCatalogView === "packages") {
           const packageService = (result.services as CatalogService[]).find((item) => item.slug === PACKAGE_BOOKING_SERVICE_SLUG);
           setBookingType("treatment");
@@ -735,14 +757,27 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
               </section>}
               {bookingType === "treatment" && catalogView === "packages" && <section className="bk-treatment-catalog bk-package-catalog">
                 <div className="bk-treatment-catalog-head"><div><span className="bk-label"><i className="fa-solid fa-gift" /> Glow Plans (Packages)</span><p>Select one or more packages for your appointment.</p></div><span>{cartProducts.length} selected</span></div>
-                <div className="bk-catalog-card-grid">
-                  {products.map((product) => {
-                    const selected = cartProductIds.includes(product.id);
-                    return <article key={product.id} className={`bk-catalog-card ${selected ? "selected" : ""}`}>
-                      <div className="bk-catalog-card-icon"><i className="fa-solid fa-wand-magic-sparkles" /></div>
-                      <div className="bk-catalog-card-copy"><small>{product.category} · {product.subcategory}</small><strong>{product.name}</strong>{product.description && <p>{product.description}</p>}<span><b>PHP {Number(product.price).toLocaleString()}</b></span></div>
-                      <button type="button" className={selected ? "is-added" : ""} onClick={() => toggleProduct(product.id)}>{selected ? <><i className="fa-solid fa-check" /> In cart</> : <><i className="fa-solid fa-plus" /> Add</>}</button>
-                    </article>;
+                <div className="bk-package-groups">
+                  {packageGroups.map((group) => {
+                    const expanded = expandedPackageGroups.includes(group.key);
+                    const selectedCount = group.products.filter((product) => cartProductIds.includes(product.id)).length;
+                    return <section className={`bk-package-group ${expanded ? "is-open" : ""}`} key={group.key}>
+                      <button type="button" className="bk-package-group-toggle" aria-expanded={expanded} aria-controls={`package-group-${group.key.replace(/[^a-zA-Z0-9_-]/g, "-")}`} onClick={() => setExpandedPackageGroups((current) => current.includes(group.key) ? current.filter((key) => key !== group.key) : [...current, group.key])}>
+                        <span className="bk-package-group-icon"><i className="fa-solid fa-wand-magic-sparkles" /></span>
+                        <span><small>{group.category}</small><strong>{group.label}</strong></span>
+                        <span className="bk-package-group-meta">{selectedCount > 0 && <b>{selectedCount} selected</b>}<small>{group.products.length} option{group.products.length === 1 ? "" : "s"}</small><i className="fa-solid fa-chevron-down" /></span>
+                      </button>
+                      {expanded && <div className="bk-catalog-card-grid" id={`package-group-${group.key.replace(/[^a-zA-Z0-9_-]/g, "-")}`}>
+                        {group.products.map((product) => {
+                          const selected = cartProductIds.includes(product.id);
+                          return <article key={product.id} className={`bk-catalog-card ${selected ? "selected" : ""}`}>
+                            <div className="bk-catalog-card-icon"><i className="fa-solid fa-wand-magic-sparkles" /></div>
+                            <div className="bk-catalog-card-copy"><small>{product.category} · {product.subcategory}</small><strong>{product.name}</strong>{product.description && <p>{product.description}</p>}<span><b>PHP {Number(product.price).toLocaleString()}</b></span></div>
+                            <button type="button" className={selected ? "is-added" : ""} onClick={() => toggleProduct(product.id)}>{selected ? <><i className="fa-solid fa-check" /> In cart</> : <><i className="fa-solid fa-plus" /> Add</>}</button>
+                          </article>;
+                        })}
+                      </div>}
+                    </section>;
                   })}
                 </div>
               </section>}
