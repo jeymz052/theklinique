@@ -8,7 +8,7 @@ const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const PAYMENT_HOLD_MINUTES = 15;
+const PAYMENT_HOLD_MINUTES = 30;
 
 const allowedStatuses = ["pending", "confirmed", "completed", "cancelled", "no_show"] as const;
 type AppointmentStatus = (typeof allowedStatuses)[number];
@@ -22,7 +22,11 @@ type AppointmentRecord = {
   notes: string | null;
   visit_kind: "standard" | "consultation_follow_up";
   parent_appointment_id: string | null;
-  clients: { full_name: string; email: string | null; phone: string } | { full_name: string; email: string | null; phone: string }[] | null;
+  payment_expires_at: string | null;
+  cancellation_reason: string | null;
+  reservation_fee_waived_at: string | null;
+  reservation_fee_waiver_reason: string | null;
+  clients: { id: string; full_name: string; email: string | null; phone: string } | { id: string; full_name: string; email: string | null; phone: string }[] | null;
   services: { name: string; service_categories: { slug: string } | { slug: string }[] | null } | { name: string; service_categories: { slug: string } | { slug: string }[] | null }[] | null;
   payments: { status: string; amount: number | string; paid_at: string | null }[] | null;
 };
@@ -74,6 +78,7 @@ function toAppointment(record: AppointmentRecord) {
   const normalizedStatus = record.status === ("paid" as AppointmentStatus) ? "confirmed" : record.status;
   return {
     id: record.id,
+    clientId: client?.id || "",
     referenceNo: record.reference_no,
     patient: client?.full_name || "Unknown patient",
     email: client?.email || "",
@@ -82,6 +87,10 @@ function toAppointment(record: AppointmentRecord) {
     serviceCategory: serviceCategory?.slug || "",
     visitKind: record.visit_kind || "standard",
     parentAppointmentId: record.parent_appointment_id || null,
+    paymentExpiresAt: record.payment_expires_at || null,
+    cancellationReason: record.cancellation_reason || "",
+    reservationFeeWaivedAt: record.reservation_fee_waived_at || null,
+    reservationFeeWaiverReason: record.reservation_fee_waiver_reason || "",
     date: record.appointment_date,
     time: record.appointment_time?.slice(0, 5) || "",
     status: normalizedStatus as AppointmentStatus,
@@ -101,7 +110,7 @@ export async function GET(request: Request) {
     if (releaseError) throw releaseError;
     let query = admin
       .from("appointments")
-      .select("id, reference_no, appointment_date, appointment_time, status, total_amount, notes, visit_kind, parent_appointment_id, clients(full_name, email, phone), services(name, service_categories(slug)), payments(status, amount, paid_at)")
+      .select("id, reference_no, appointment_date, appointment_time, status, total_amount, notes, visit_kind, parent_appointment_id, payment_expires_at, cancellation_reason, reservation_fee_waived_at, reservation_fee_waiver_reason, clients(id, full_name, email, phone), services(name, service_categories(slug)), payments(status, amount, paid_at)")
       .order("appointment_date", { ascending: true })
       .order("appointment_time", { ascending: true });
 
@@ -399,7 +408,51 @@ export async function PATCH(request: Request) {
   if (!user) return NextResponse.json({ error: "Sign in is required." }, { status: 401 });
 
   try {
-    const { id, status, reason } = await request.json();
+    const { id, status, reason, action, appointmentDate, appointmentTime } = await request.json();
+    if (typeof id === "string" && ["confirm_without_fee", "extend_payment", "reschedule"].includes(action)) {
+      const admin = getAdminClient();
+      const role = await getUserRole(user);
+      if (!isStaffRole(role)) return NextResponse.json({ error: "Clinic staff access is required." }, { status: 403 });
+      const { data: current, error: currentError } = await admin.from("appointments").select("id,status,appointment_date,appointment_time,cancellation_reason,payment_expires_at").eq("id", id).single();
+      if (currentError || !current) return NextResponse.json({ error: "Appointment not found." }, { status: 404 });
+      const now = clinicNow();
+      if (current.appointment_date < now.date || (current.appointment_date === now.date && normalizeTime(current.appointment_time) <= now.time)) return NextResponse.json({ error: "Past appointment times cannot be updated." }, { status: 409 });
+      if (action === "reschedule") {
+        const nextDate=String(appointmentDate||""),nextTime=String(appointmentTime||"");
+        if(!["pending","confirmed"].includes(current.status))return NextResponse.json({error:"Only active appointments can be rescheduled."},{status:409});
+        if(!isIsoDate(nextDate)||!/^\d{2}:\d{2}:00$/.test(nextTime))return NextResponse.json({error:"Choose a valid date and time."},{status:400});
+        const normalized=normalizeTime(nextTime),day=new Date(`${nextDate}T00:00:00Z`).getUTCDay();
+        const[{data:schedule,error:scheduleError},{data:blocked,error:blockedError},{data:conflict,error:conflictError}]=await Promise.all([admin.from("availability_schedules").select("open_time,close_time").eq("day_of_week",day).eq("is_active",true).maybeSingle(),admin.from("blocked_dates").select("id").eq("blocked_date",nextDate).maybeSingle(),admin.from("appointments").select("id").eq("appointment_date",nextDate).eq("appointment_time",nextTime).not("status","in",'("cancelled","no_show")').neq("id",id).limit(1)]);
+        if(scheduleError||blockedError||conflictError)throw scheduleError||blockedError||conflictError;
+        const valid=schedule&&hourlyTimes(schedule.open_time,schedule.close_time).includes(normalized);
+        if(!valid||blocked)return NextResponse.json({error:"The clinic is unavailable at that schedule."},{status:409});
+        if(nextDate<now.date||(nextDate===now.date&&normalized<=now.time))return NextResponse.json({error:"Past appointment times cannot be selected."},{status:409});
+        if(conflict?.length)return NextResponse.json({error:"That time was just booked. Choose another available slot."},{status:409});
+        const{error}=await admin.from("appointments").update({appointment_date:nextDate,appointment_time:nextTime,updated_at:new Date().toISOString()}).eq("id",id);
+        if(error)throw error;
+        return NextResponse.json({ok:true});
+      }
+      if (action === "extend_payment") {
+        if (current.status !== "pending") return NextResponse.json({ error: "Only an active unpaid booking can be extended." }, { status: 409 });
+        const paymentExpiresAt = new Date(Date.now() + PAYMENT_HOLD_MINUTES * 60_000).toISOString();
+        const { error } = await admin.from("appointments").update({ payment_expires_at: paymentExpiresAt, updated_at: new Date().toISOString() }).eq("id", id).eq("status", "pending");
+        if (error) throw error;
+        return NextResponse.json({ ok: true, paymentExpiresAt });
+      }
+      const waiverReason = String(reason || "").trim().slice(0, 1000);
+      if (!waiverReason) return NextResponse.json({ error: "Enter why the reservation fee is being waived." }, { status: 400 });
+      if (current.status !== "pending" && !(current.status === "cancelled" && current.cancellation_reason === "Reservation payment deadline expired")) return NextResponse.json({ error: "Only an unpaid or payment-expired booking can be clinic-confirmed." }, { status: 409 });
+      const { data: conflict, error: conflictError } = await admin.from("appointments").select("id").eq("appointment_date", current.appointment_date).eq("appointment_time", current.appointment_time).not("status", "in", '("cancelled","no_show")').neq("id", id).limit(1);
+      if (conflictError) throw conflictError;
+      if (conflict?.length) return NextResponse.json({ error: "That schedule has already been taken. Rebook the patient in an available slot." }, { status: 409 });
+      const changedAt = new Date().toISOString();
+      const { error } = await admin.from("appointments").update({ status: "confirmed", payment_expires_at: null, cancelled_at: null, cancellation_reason: null, reservation_fee_waived_at: changedAt, reservation_fee_waived_by: user.id, reservation_fee_waiver_reason: waiverReason, updated_at: changedAt }).eq("id", id);
+      if (error) throw error;
+      const { error: paymentError } = await admin.from("payments").update({ status: "waived", metadata: { kind: "reservation_fee", waived: true, waived_by: user.id, waiver_reason: waiverReason } }).eq("appointment_id", id).in("status", ["pending", "awaiting_payment", "failed"]);
+      if (paymentError) throw paymentError;
+      try { await notifyAppointmentStatusChanged(admin, id, "confirmed"); } catch (notificationError) { console.error("Unable to send appointment confirmation:", notificationError); }
+      return NextResponse.json({ ok: true });
+    }
     if (typeof id !== "string" || !allowedStatuses.includes(status)) {
       return NextResponse.json({ error: "Invalid appointment update." }, { status: 400 });
     }

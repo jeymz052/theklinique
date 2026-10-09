@@ -42,7 +42,7 @@ export async function POST(request: Request) {
     if (appointmentError || !appointment) return NextResponse.json({ error: "Appointment not found." }, { status: 404 });
     if (appointment.payment_expires_at && new Date(appointment.payment_expires_at).getTime() <= Date.now()) {
       await admin.from("appointments").update({ status: "cancelled", cancellation_reason: "Reservation payment deadline expired", cancelled_at: new Date().toISOString() }).eq("id", appointment.id).eq("status", "pending");
-      return NextResponse.json({ error: "The 15-minute payment window expired. Please book the available slot again." }, { status: 409 });
+      return NextResponse.json({ error: "The 30-minute payment window expired. Please book the available slot again or contact the clinic." }, { status: 409 });
     }
     const client = Array.isArray(appointment.clients) ? appointment.clients[0] : appointment.clients;
     if (!client) return NextResponse.json({ error: "Patient details were not found for this appointment." }, { status: 404 });

@@ -19,8 +19,9 @@ import ClinicCalendar from "@/app/components/ClinicCalendar";
 import WebsiteContentManager from "@/app/components/WebsiteContentManager";
 import BlogBuilder from "@/app/components/BlogBuilder";
 import StaffAppointmentModal from "@/app/components/StaffAppointmentModal";
-import type { PatientRecord } from "@/lib/patients";
-import { appointmentStatusLabel, fetchAppointments, updateAppointmentStatus, type Appointment, type AppointmentStatus } from "@/lib/appointments";
+import StaffRescheduleModal from "@/app/components/StaffRescheduleModal";
+import { fetchPatients, type PatientRecord } from "@/lib/patients";
+import { appointmentStatusLabel, fetchAppointments, rescheduleAppointment, updateAppointmentStatus, updateReservationWorkflow, type Appointment, type AppointmentStatus } from "@/lib/appointments";
 import { fetchRescheduleRequests, reviewRescheduleRequest, type RescheduleRequest } from "@/lib/rescheduleRequests";
 
 type NavSection = "scheduling" | "clinical";
@@ -42,6 +43,7 @@ export default function DoctorDashboard() {
   const [bookingPatient, setBookingPatient] = useState<PatientRecord | null>(null);
   const [dataError, setDataError] = useState("");
   const [clinicalAppointmentId, setClinicalAppointmentId] = useState<string | null>(null);
+  const [rescheduling,setRescheduling]=useState<Appointment|null>(null);
 
   const today    = new Date();
   const dayName  = today.toLocaleDateString("en-PH", { weekday: "long" });
@@ -95,6 +97,23 @@ export default function DoctorDashboard() {
     }
   };
 
+  const handleReservationAction = async (id: string, action: "confirm_without_fee" | "extend_payment", reason = "") => {
+    try {
+      await updateReservationWorkflow(id, action, reason);
+      const appointments = await fetchAppointments();
+      setBookings(appointments.map((appointment) => ({ ...appointment, room: "Clinic" })));
+    } catch (error) { setDataError(error instanceof Error ? error.message : "Unable to update reservation."); }
+  };
+
+  const bookAnotherTime = async (appointment: Appointment) => {
+    try {
+      const patients = await fetchPatients();
+      const patient = patients.find((item) => item.id === appointment.clientId);
+      if (!patient) throw new Error("The patient record could not be loaded.");
+      setBookingPatient(patient);
+    } catch (error) { setDataError(error instanceof Error ? error.message : "Unable to open patient booking."); }
+  };
+
   const handleReviewReschedule = async (requestId: string, decision: "approved" | "rejected") => {
     try {
       await reviewRescheduleRequest(requestId, decision);
@@ -144,6 +163,7 @@ export default function DoctorDashboard() {
     <div className={`dk-root ${mobileNavOpen ? "mobile-nav-open" : ""}`}>
       <button type="button" className="dk-mobile-nav-overlay" aria-label="Close navigation" onClick={() => setMobileNavOpen(false)} />
       {bookingPatient && <StaffAppointmentModal patient={bookingPatient} onClose={() => setBookingPatient(null)} onCreated={async () => { const appointments=await fetchAppointments(); setBookings(appointments.map(appointment=>({...appointment,room:"Clinic"}))); }} />}
+      {rescheduling&&<StaffRescheduleModal appointment={rescheduling} onClose={()=>setRescheduling(null)} onSave={async(date,time)=>{await rescheduleAppointment(rescheduling.id,date,time);const appointments=await fetchAppointments();setBookings(appointments.map(appointment=>({...appointment,room:"Clinic"})))}}/>}
 
       {/* SIDEBAR */}
       <aside className="dk-sidebar" onClick={(event) => {
@@ -407,7 +427,7 @@ export default function DoctorDashboard() {
                 </div>
                 <div className="ma-hero-actions"><button type="button" className="dk-cta-btn" onClick={() => setView("emr")}><i className="fa-solid fa-user-check" /> Choose patient to book</button></div>
               </div>
-              <DoctorAppointmentWorkspace appointments={bookings} onStatusChange={handleStatusChange} rescheduleRequests={rescheduleRequests} onReviewReschedule={handleReviewReschedule} onOpenClinicalWorkspace={(appointment) => { setClinicalAppointmentId(appointment.id); setView(appointment.serviceCategory === "consultations" ? "consultations" : "treatments"); }} />
+              <DoctorAppointmentWorkspace appointments={bookings} onStatusChange={handleStatusChange} onReservationAction={handleReservationAction} onBookAnotherTime={bookAnotherTime} onEditSchedule={setRescheduling} rescheduleRequests={rescheduleRequests} onReviewReschedule={handleReviewReschedule} onOpenClinicalWorkspace={(appointment) => { setClinicalAppointmentId(appointment.id); setView(appointment.serviceCategory === "consultations" ? "consultations" : "treatments"); }} />
             </>
           )}
 
@@ -441,7 +461,7 @@ export default function DoctorDashboard() {
 
           {/* EMR */}
           {view === "emr" && (
-            <PatientRecordsWorkspace onBookPatient={openPatientBooking} />
+            <PatientRecordsWorkspace onBookPatient={openPatientBooking} onResolveAppointment={() => setView("all-appts")} />
           )}
           {view === "consultations" && <ConsultationWorkspace appointments={bookings} initialAppointmentId={clinicalAppointmentId} onOpenRecords={() => setView("emr")} onCompleted={async () => { const appointments = await fetchAppointments(); setBookings(appointments.map((appointment) => ({ ...appointment, room: "Clinic" }))); }} />}
           {view === "treatments" && <TreatmentWorkspace initialAppointmentId={clinicalAppointmentId} onCompleted={async () => { const appointments = await fetchAppointments(); setBookings(appointments.map((appointment) => ({ ...appointment, room: "Clinic" }))); }} />}

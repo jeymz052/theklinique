@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useRoleAuth } from "@/lib/rbac";
-import { fetchAppointments, updateAppointmentStatus, type Appointment, type AppointmentStatus } from "@/lib/appointments";
+import { fetchAppointments, updateAppointmentStatus, updateReservationWorkflow, type Appointment, type AppointmentStatus } from "@/lib/appointments";
 import DashboardAccountMenu from "@/app/components/DashboardAccountMenu";
 import AppointmentNotifications from "@/app/components/AppointmentNotifications";
 import DashboardInsights from "@/app/components/DashboardInsights";
@@ -58,6 +58,13 @@ export default function SecretaryDashboard() {
     } catch (error) {
       setDataError(error instanceof Error ? error.message : "Unable to update appointment.");
     }
+  }
+
+  async function reservationAction(id: string, action: "confirm_without_fee" | "extend_payment") {
+    const reason = action === "confirm_without_fee" ? window.prompt("Reason for confirming without the reservation fee:", "Patient confirmed by phone")?.trim() : "";
+    if (action === "confirm_without_fee" && !reason) return;
+    try { await updateReservationWorkflow(id, action, reason); setAppointments(await fetchAppointments()); }
+    catch (error) { setDataError(error instanceof Error ? error.message : "Unable to update reservation."); }
   }
 
   async function signOut() {
@@ -135,17 +142,18 @@ export default function SecretaryDashboard() {
               ].map((item) => <button type="button" className="dk-quick-card" key={item.label} onClick={item.action}><i className={`fa-solid ${item.icon} dk-quick-icon`} /><span className="dk-quick-label">{item.label}</span><i className="fa-solid fa-arrow-right dk-quick-arrow" /></button>)}
             </div>
             <DashboardInsights appointments={appointments} role="secretary" />
-            <AppointmentTable items={today.length ? today : pending.slice(0, 6)} onStatus={changeStatus} />
+            <AppointmentTable items={today.length ? today : pending.slice(0, 6)} onStatus={changeStatus} onReservationAction={reservationAction} />
           </>}
 
           {view === "schedule" && <div className="dk-panel">
             <div className="dk-panel-hdr"><div className="dk-panel-title-wrap"><i className="fa-solid fa-calendar-check" /><div><p className="dk-panel-title">Appointment desk</p><p className="dk-panel-sub">Search, confirm, or cancel clinic visits</p></div></div><div className="dk-pill-row"><select className="dk-modal-select" value={status} onChange={(event) => setStatus(event.target.value)}><option value="all">All statuses</option><option value="pending">Pending</option><option value="confirmed">Confirmed</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option></select><div className="dk-search"><i className="fa-solid fa-magnifying-glass" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Patient, phone, reference…" /></div></div></div>
-            <AppointmentTable items={filtered} onStatus={changeStatus} />
+            {filtered.some((item) => item.status === "pending" || (item.status === "cancelled" && item.cancellationReason === "Reservation payment deadline expired")) && <div className="dk-quick-grid" style={{marginBottom:"1rem"}}>{filtered.filter((item) => item.status === "pending" || (item.status === "cancelled" && item.cancellationReason === "Reservation payment deadline expired")).map((item) => <article className="dk-quick-card" key={`reservation-${item.id}`}><i className="fa-solid fa-hourglass-half dk-quick-icon"/><span className="dk-quick-label">{item.patient}<small>{item.referenceNo} · {item.status === "pending" ? "Awaiting fee" : "Payment hold expired"}</small></span><button type="button" className="dk-act-btn dk-act-complete" onClick={() => void reservationAction(item.id,"confirm_without_fee")}>{item.status === "pending" ? "Confirm by clinic" : "Restore & confirm"}</button>{item.status === "pending"&&<button type="button" className="dk-act-btn" onClick={() => void reservationAction(item.id,"extend_payment")}>Add 30 minutes</button>}</article>)}</div>}
+            <AppointmentTable items={filtered} onStatus={changeStatus} onReservationAction={reservationAction} />
           </div>}
           {view === "calendar" && <ClinicCalendar />}
           {view === "website-content" && <WebsiteContentManager />}
 
-          {view === "patients" && <PatientRecordsWorkspace onBookPatient={setBookingPatient}/>} 
+          {view === "patients" && <PatientRecordsWorkspace onBookPatient={setBookingPatient} onResolveAppointment={() => setView("schedule")}/>}
           {(view === "settings" || view === "profile") && <BasicSettingsWorkspace key={view} email={user?.email} initialTab={view === "profile" ? "profile" : "general"} />}
         </div>
       </main>
@@ -153,6 +161,8 @@ export default function SecretaryDashboard() {
   );
 }
 
-function AppointmentTable({ items, onStatus }: { items: Appointment[]; onStatus: (id: string, status: AppointmentStatus) => void }) {
+function AppointmentTable({ items, onStatus, onReservationAction }: { items: Appointment[]; onStatus: (id: string, status: AppointmentStatus) => void; onReservationAction: (id: string, action: "confirm_without_fee" | "extend_payment") => void }) {
+  const unpaid = items.filter((item) => item.status === "pending");
+  void unpaid; void onReservationAction;
   return <div className="dk-panel"><div className="dk-table-wrap"><table className="dk-table"><thead><tr><th>Patient</th><th>Service</th><th>Schedule</th><th>Status</th><th>Action</th></tr></thead><tbody>{items.length ? items.map((item) => <tr key={item.id}><td><p className="dk-cell-primary">{item.patient}</p><p className="dk-cell-secondary">{item.referenceNo} · {item.phone}</p></td><td>{item.service}</td><td>{item.date}<p className="dk-cell-secondary">{item.time}</p></td><td><span className={`dk-badge dk-badge-${item.status}`}>{item.status === "pending" ? "Awaiting payment" : item.status}</span></td><td><div className="dk-action-group">{item.status !== "cancelled" && item.status !== "completed" && <button className="dk-act-btn dk-act-view" onClick={() => onStatus(item.id, "cancelled")}>Cancel</button>}</div></td></tr>) : <tr><td colSpan={5}><div className="dk-empty"><div className="dk-empty-icon"><i className="fa-regular fa-calendar-check" /></div><h3>Queue is clear</h3><p>No appointments match this view.</p></div></td></tr>}</tbody></table></div></div>;
 }

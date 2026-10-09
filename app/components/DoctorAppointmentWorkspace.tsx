@@ -7,6 +7,9 @@ import type { RescheduleRequest } from "@/lib/rescheduleRequests";
 type Props = {
   appointments: Appointment[];
   onStatusChange: (id: string, status: AppointmentStatus) => Promise<void>;
+  onReservationAction: (id: string, action: "confirm_without_fee" | "extend_payment", reason?: string) => Promise<void>;
+  onBookAnotherTime: (appointment: Appointment) => Promise<void>;
+  onEditSchedule: (appointment: Appointment) => void;
   rescheduleRequests: RescheduleRequest[];
   onReviewReschedule: (requestId: string, decision: "approved" | "rejected") => Promise<void>;
   onOpenClinicalWorkspace: (appointment: Appointment) => void;
@@ -31,7 +34,7 @@ function initials(name: string) {
   return name.split(" ").filter(Boolean).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "PT";
 }
 
-export default function DoctorAppointmentWorkspace({ appointments, onStatusChange, rescheduleRequests, onReviewReschedule, onOpenClinicalWorkspace }: Props) {
+export default function DoctorAppointmentWorkspace({ appointments, onStatusChange, onReservationAction, onBookAnotherTime, onEditSchedule, rescheduleRequests, onReviewReschedule, onOpenClinicalWorkspace }: Props) {
   const today = localDateKey();
   const [query, setQuery] = useState("");
   const [timeline, setTimeline] = useState<TimelineFilter>("upcoming");
@@ -39,6 +42,8 @@ export default function DoctorAppointmentWorkspace({ appointments, onStatusChang
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const summary = useMemo(() => ({
     today: appointments.filter((item) => item.date === today && !["cancelled", "no_show"].includes(item.status)).length,
@@ -50,17 +55,20 @@ export default function DoctorAppointmentWorkspace({ appointments, onStatusChang
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return appointments.filter((item) => {
-      const matchesTimeline = timeline === "all" || (timeline === "today" && item.date === today && item.status !== "pending") || (timeline === "upcoming" && item.date >= today && item.status === "confirmed") || (timeline === "past" && (item.date < today || ["completed", "cancelled", "no_show"].includes(item.status)));
+      const matchesTimeline = timeline === "all" || (timeline === "today" && item.date === today && !["cancelled", "no_show"].includes(item.status)) || (timeline === "upcoming" && item.date >= today && ["pending", "confirmed"].includes(item.status)) || (timeline === "past" && (item.date < today || ["completed", "cancelled", "no_show"].includes(item.status)));
       const matchesStatus = status === "all" || item.status === status;
       const matchesQuery = !needle || [item.patient, item.referenceNo, item.service, item.email, item.phone, item.notes].some((value) => value.toLowerCase().includes(needle));
       return matchesTimeline && matchesStatus && matchesQuery;
     }).sort((a, b) => timeline === "past" ? b.date.localeCompare(a.date) || b.time.localeCompare(a.time) : a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
   }, [appointments, query, status, timeline, today]);
 
-  const groups = useMemo(() => filtered.reduce<Record<string, Appointment[]>>((result, item) => {
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const pagedAppointments = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const groups = useMemo(() => pagedAppointments.reduce<Record<string, Appointment[]>>((result, item) => {
     (result[item.date] ||= []).push(item);
     return result;
-  }, {}), [filtered]);
+  }, {}), [pagedAppointments]);
 
   async function update(id: string, nextStatus: AppointmentStatus) {
     setUpdatingId(id);
@@ -72,8 +80,15 @@ export default function DoctorAppointmentWorkspace({ appointments, onStatusChang
     try { await onReviewReschedule(requestId, decision); } finally { setReviewingId(null); }
   }
 
+  async function reservationAction(appointment: Appointment, action: "confirm_without_fee" | "extend_payment") {
+    const reason = action === "confirm_without_fee" ? window.prompt("Reason for confirming without the reservation fee:", "Patient confirmed by phone")?.trim() : "";
+    if (action === "confirm_without_fee" && !reason) return;
+    setUpdatingId(appointment.id);
+    try { await onReservationAction(appointment.id, action, reason); } finally { setUpdatingId(null); }
+  }
+
   function resetFilters() {
-    setQuery(""); setTimeline("all"); setStatus("all");
+    setQuery(""); setTimeline("all"); setStatus("all"); setPage(1);
   }
 
   return <div className="ma-workspace">
@@ -93,7 +108,7 @@ export default function DoctorAppointmentWorkspace({ appointments, onStatusChang
     </section>}
 
     <section className="ma-filters">
-      <label className="ma-search"><i className="fa-solid fa-magnifying-glass" /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search patient, email, phone, treatment, or reference..." /></label>
+      <label className="ma-search"><i className="fa-solid fa-magnifying-glass" /><input type="search" value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder="Search patient, email, phone, treatment, or reference..." /></label>
       <div className="ma-filter-row">
         <div className="ma-segmented" role="group" aria-label="Filter by date">{(["today", "upcoming", "past", "all"] as TimelineFilter[]).map((item) => <button type="button" key={item} className={timeline === item ? "active" : ""} onClick={() => setTimeline(item)}><i className={`fa-solid ${item === "today" ? "fa-calendar-day" : item === "upcoming" ? "fa-calendar-plus" : item === "past" ? "fa-calendar-xmark" : "fa-list"}`} /> {item.charAt(0).toUpperCase() + item.slice(1)}</button>)}</div>
         <span><i className="fa-solid fa-filter" /> {filtered.length} of {appointments.length}</span>
@@ -123,6 +138,11 @@ export default function DoctorAppointmentWorkspace({ appointments, onStatusChang
                 {["confirmed", "completed"].includes(appointment.status) && <button type="button" className="ma-primary-btn" onClick={() => onOpenClinicalWorkspace(appointment)}><i className={`fa-solid ${appointment.serviceCategory === "consultations" ? "fa-comment-medical" : "fa-syringe"}`} /> Open {appointment.serviceCategory === "consultations" ? "consultation" : "treatment"}</button>}
                 {appointment.status === "confirmed" && <button type="button" className="ma-primary-btn" disabled={isUpdating} onClick={() => update(appointment.id, "completed")}><i className="fa-solid fa-check-double" /> Complete</button>}
                 {appointment.status === "confirmed" && <button type="button" className="ma-detail-btn" disabled={isUpdating} onClick={() => update(appointment.id, "no_show")}><i className="fa-solid fa-user-slash" /> No show</button>}
+                {appointment.status === "pending" && <button type="button" className="ma-primary-btn" disabled={isUpdating} onClick={() => void reservationAction(appointment, "confirm_without_fee")}><i className="fa-solid fa-phone" /> Confirm by clinic</button>}
+                {appointment.status === "pending" && <button type="button" className="ma-detail-btn" disabled={isUpdating} onClick={() => void reservationAction(appointment, "extend_payment")}><i className="fa-solid fa-clock-rotate-left" /> Add 30 minutes</button>}
+                {["pending","confirmed"].includes(appointment.status)&&<button type="button" className="ma-detail-btn" disabled={isUpdating} onClick={()=>onEditSchedule(appointment)}><i className="fa-solid fa-calendar-days"/> Edit date &amp; time</button>}
+                {appointment.status === "cancelled" && appointment.cancellationReason === "Reservation payment deadline expired" && <button type="button" className="ma-primary-btn" disabled={isUpdating} onClick={() => void reservationAction(appointment, "confirm_without_fee")}><i className="fa-solid fa-phone" /> Restore &amp; confirm</button>}
+                {appointment.status === "cancelled" && appointment.cancellationReason === "Reservation payment deadline expired" && <button type="button" className="ma-detail-btn" disabled={isUpdating} onClick={() => void onBookAnotherTime(appointment)}><i className="fa-solid fa-calendar-plus" /> Book another time</button>}
                 {["pending", "confirmed"].includes(appointment.status) && <button type="button" className="ma-cancel-btn" disabled={isUpdating} onClick={() => update(appointment.id, "cancelled")}><i className="fa-solid fa-xmark" /> Cancel</button>}
               </div>
             </article>;
@@ -131,5 +151,6 @@ export default function DoctorAppointmentWorkspace({ appointments, onStatusChang
       })}
       {!filtered.length && <div className="ma-empty"><i className="fa-regular fa-calendar-xmark" /><h3>No matching appointments</h3><p>Try changing the date or status filters.</p><button type="button" onClick={resetFilters}>Show all appointments</button></div>}
     </section>
+    {filtered.length > 0 && <div className="dk-pagination"><label>Rows per page<select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1); }}><option value={10}>10</option><option value={25}>25</option><option value={50}>50</option></select></label><span>{(currentPage - 1) * pageSize + 1}–{Math.min(currentPage * pageSize, filtered.length)} of {filtered.length}</span><nav aria-label="Appointment pages"><button type="button" disabled={currentPage===1} onClick={()=>setPage(value=>value-1)} aria-label="Previous page"><i className="fa-solid fa-chevron-left"/></button>{Array.from({length:pageCount},(_,index)=>index+1).filter(number=>number===1||number===pageCount||Math.abs(number-currentPage)<=1).map((number,index,array)=><span key={number}>{index>0&&number-array[index-1]>1&&<em>…</em>}<button type="button" className={number===currentPage?"active":""} onClick={()=>setPage(number)}>{number}</button></span>)}<button type="button" disabled={currentPage===pageCount} onClick={()=>setPage(value=>value+1)} aria-label="Next page"><i className="fa-solid fa-chevron-right"/></button></nav></div>}
   </div>;
 }

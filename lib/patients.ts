@@ -23,10 +23,12 @@ export interface PatientRecord {
   totalAppointments: number;
   lastVisit: string | null;
   createdAt: string;
+  archivedAt: string | null;
+  archiveReason: string;
   procedures: { id: string; service: string; status: string; completedAt: string | null }[];
 }
 
-export type PatientInput = Pick<PatientRecord, "fullName" | "email" | "phone" | "dateOfBirth" | "sex" | "address" | "notes">;
+export type PatientInput = Pick<PatientRecord, "fullName" | "email" | "phone" | "dateOfBirth" | "sex" | "address" | "civilStatus" | "bloodType" | "allergies" | "medicalHistory" | "currentMedications" | "emergencyContactName" | "emergencyContactPhone" | "notes">;
 
 async function authHeaders(): Promise<Record<string, string>> {
   const { data } = await supabase.auth.getSession();
@@ -49,6 +51,13 @@ export async function createPatient(input: PatientInput) {
 
 export async function updatePatient(patient: PatientRecord) {
   const response = await fetch("/api/patients", { method: "PATCH", headers: { "Content-Type": "application/json", ...(await authHeaders()) }, body: JSON.stringify(patient) });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || "Unable to update the patient record.");
+  return result.patient as PatientRecord;
+}
+
+export async function setPatientArchived(id: string, archived: boolean, reason = "") {
+  const response = await fetch("/api/patients", { method: "PATCH", headers: { "Content-Type": "application/json", ...(await authHeaders()) }, body: JSON.stringify({ id, action: archived ? "archive" : "restore", reason }) });
   const result = await response.json();
   if (!response.ok) throw new Error(result.error || "Unable to update the patient record.");
   return result.patient as PatientRecord;

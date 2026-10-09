@@ -52,7 +52,7 @@ export async function POST(request: Request) {
       .from("payments")
       .update({ status: "paid", paid_at: new Date().toISOString(), metadata: { kind: "reservation_fee", checkout_session: checkout, credited_to_visit: true } })
       .eq("paymongo_payment_id", checkoutId)
-      .eq("status", "awaiting_payment")
+      .in("status", ["awaiting_payment", "waived"])
       .select("appointment_id");
     let payments = paymentUpdate.data;
     if (paymentUpdate.error) throw paymentUpdate.error;
@@ -63,7 +63,7 @@ export async function POST(request: Request) {
         const fallback = await admin.from("payments")
           .update({ status: "paid", paid_at: new Date().toISOString(), paymongo_payment_id: checkoutId, metadata: { kind: "reservation_fee", checkout_session: checkout, credited_to_visit: true } })
           .eq("appointment_id", appointment.id)
-          .eq("status", "awaiting_payment")
+          .in("status", ["awaiting_payment", "waived"])
           .select("appointment_id");
         if (fallback.error) throw fallback.error;
         payments = fallback.data;

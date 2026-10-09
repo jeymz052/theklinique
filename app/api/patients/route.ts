@@ -42,6 +42,7 @@ type PatientRow = {
   date_of_birth: string | null; sex: string | null; address: string | null; civil_status: string | null; blood_type: string | null;
   allergies: string | null; medical_history: string | null; current_medications: string | null; emergency_contact_name: string | null;
   emergency_contact_phone: string | null; notes: string | null; record_source: string; created_at: string; appointments: AppointmentRow[] | null; treatment_cases: TreatmentRow[] | null;
+  archived_at: string | null; archive_reason: string | null;
 };
 
 function serialize(row: PatientRow) {
@@ -54,12 +55,13 @@ function serialize(row: PatientRow) {
     address: row.address || "", civilStatus: row.civil_status || "", bloodType: row.blood_type || "", allergies: row.allergies || "",
     medicalHistory: row.medical_history || "", currentMedications: row.current_medications || "", emergencyContactName: row.emergency_contact_name || "",
     emergencyContactPhone: row.emergency_contact_phone || "", notes: row.notes || "", source: row.record_source,
+    archivedAt: row.archived_at || null, archiveReason: row.archive_reason || "",
     completedVisits: completed.length, totalAppointments: appointments.length, lastVisit, createdAt: row.created_at,
     procedures: (row.treatment_cases || []).map((item) => ({ id: item.id, service: first(item.services)?.name || "Treatment", status: item.status, completedAt: item.completed_at })),
   };
 }
 
-const select = "id, auth_user_id, patient_no, full_name, email, phone, date_of_birth, sex, address, civil_status, blood_type, allergies, medical_history, current_medications, emergency_contact_name, emergency_contact_phone, notes, record_source, created_at, appointments(appointment_date, status), treatment_cases(id, status, completed_at, services(name))";
+const select = "id, auth_user_id, patient_no, full_name, email, phone, date_of_birth, sex, address, civil_status, blood_type, allergies, medical_history, current_medications, emergency_contact_name, emergency_contact_phone, notes, record_source, created_at, archived_at, archive_reason, appointments(appointment_date, status), treatment_cases(id, status, completed_at, services(name))";
 
 async function staffAccounts() {
   const { data, error } = await adminClient().from("profiles").select("id, email").in("role", ["superadmin", "doctor", "secretary"]);
@@ -108,7 +110,11 @@ export async function POST(request: Request) {
     if (await emailBelongsToStaff(email)) return NextResponse.json({ error: "Clinic staff accounts cannot be added as patients." }, { status: 409 });
     const { data, error } = await adminClient().from("clients").insert({
       full_name: fullName, email: email || null, phone, date_of_birth: body.dateOfBirth || null,
-      sex: body.sex || null, address: String(body.address || "").trim() || null, notes: String(body.notes || "").trim() || null,
+      sex: body.sex || null, address: String(body.address || "").trim() || null, civil_status: String(body.civilStatus || "").trim() || null,
+      blood_type: String(body.bloodType || "").trim() || null, allergies: String(body.allergies || "").trim() || null,
+      medical_history: String(body.medicalHistory || "").trim() || null, current_medications: String(body.currentMedications || "").trim() || null,
+      emergency_contact_name: String(body.emergencyContactName || "").trim() || null, emergency_contact_phone: String(body.emergencyContactPhone || "").trim() || null,
+      notes: String(body.notes || "").trim() || null,
       record_source: "manual",
     }).select(select).single();
     if (error?.code === "23505") return NextResponse.json({ error: "A patient record already uses that email address." }, { status: 409 });
@@ -126,6 +132,14 @@ export async function PATCH(request: Request) {
   try {
     const body = await request.json();
     const id = String(body.id || "");
+    if (id && ["archive", "restore"].includes(body.action)) {
+      const reason = String(body.reason || "").trim().slice(0, 1000);
+      if (body.action === "archive" && !reason) return NextResponse.json({ error: "Enter a reason for archiving this patient." }, { status: 400 });
+      const changes = body.action === "archive" ? { archived_at: new Date().toISOString(), archived_by: auth.user.id, archive_reason: reason } : { archived_at: null, archived_by: null, archive_reason: null };
+      const { data, error } = await adminClient().from("clients").update(changes).eq("id", id).select(select).single();
+      if (error || !data) throw error || new Error("Patient record was not updated.");
+      return NextResponse.json({ patient: serialize(data as unknown as PatientRow) });
+    }
     const fullName = String(body.fullName || "").trim();
     const email = String(body.email || "").trim().toLowerCase();
     const sex = ["female", "male", "other", "prefer_not_to_say"].includes(body.sex) ? body.sex : null;

@@ -1,10 +1,11 @@
 import { supabase } from "@/lib/supabase";
 
 export type AppointmentStatus = "pending" | "confirmed" | "completed" | "cancelled" | "no_show";
-export type PaymentStatus = "pending" | "awaiting_payment" | "paid" | "failed" | "refunded" | "partially_refunded" | null;
+export type PaymentStatus = "pending" | "awaiting_payment" | "paid" | "waived" | "failed" | "refunded" | "partially_refunded" | null;
 
 export interface Appointment {
   id: string;
+  clientId: string;
   referenceNo: string;
   patient: string;
   email: string;
@@ -13,6 +14,10 @@ export interface Appointment {
   serviceCategory: string;
   visitKind: "standard" | "consultation_follow_up";
   parentAppointmentId: string | null;
+  paymentExpiresAt: string | null;
+  cancellationReason: string;
+  reservationFeeWaivedAt: string | null;
+  reservationFeeWaiverReason: string;
   date: string;
   time: string;
   status: AppointmentStatus;
@@ -47,6 +52,22 @@ export async function updateAppointmentStatus(id: string, status: AppointmentSta
   });
   const result = await response.json();
   if (!response.ok) throw new Error(result.error || "Unable to update the appointment.");
+}
+
+export async function updateReservationWorkflow(id: string, action: "confirm_without_fee" | "extend_payment", reason = "") {
+  const response = await fetch("/api/appointments", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify({ id, action, reason }),
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || "Unable to update the reservation.");
+  return result as { ok: true; paymentExpiresAt?: string };
+}
+
+export async function rescheduleAppointment(id:string,appointmentDate:string,appointmentTime:string){
+  const response=await fetch("/api/appointments",{method:"PATCH",headers:{"Content-Type":"application/json",...(await authHeaders())},body:JSON.stringify({id,action:"reschedule",appointmentDate,appointmentTime:`${appointmentTime}:00`})});
+  const result=await response.json();if(!response.ok)throw new Error(result.error||"Unable to reschedule the appointment.");
 }
 
 export async function cancelAppointment(id: string, reason: string) {
