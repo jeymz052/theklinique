@@ -463,7 +463,7 @@ export default function DoctorDashboard() {
           {view === "emr" && (
             <PatientRecordsWorkspace onBookPatient={openPatientBooking} onResolveAppointment={() => setView("all-appts")} />
           )}
-          {view === "consultations" && <ConsultationWorkspace appointments={bookings} initialAppointmentId={clinicalAppointmentId} onOpenRecords={() => setView("emr")} onCompleted={async () => { const appointments = await fetchAppointments(); setBookings(appointments.map((appointment) => ({ ...appointment, room: "Clinic" }))); }} />}
+          {view === "consultations" && <ConsultationWorkspace appointments={bookings} initialAppointmentId={clinicalAppointmentId} onOpenRecords={() => setView("emr")} onOpenProcedure={async (appointmentId) => { setClinicalAppointmentId(appointmentId); setView("treatments"); }} onCompleted={async () => { const appointments = await fetchAppointments(); setBookings(appointments.map((appointment) => ({ ...appointment, room: "Clinic" }))); }} />}
           {view === "treatments" && <TreatmentWorkspace initialAppointmentId={clinicalAppointmentId} onCompleted={async () => { const appointments = await fetchAppointments(); setBookings(appointments.map((appointment) => ({ ...appointment, room: "Clinic" }))); }} />}
           {(view === "settings" || view === "profile") && <StaffSettingsWorkspace key={view} email={user?.email || ""} initialTab={view === "profile" ? "profile" : "general"} />}
         </div>

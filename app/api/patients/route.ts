@@ -36,7 +36,7 @@ async function requireStaff(request: Request) {
 
 type AppointmentRow = { appointment_date: string; status: string };
 function first<T>(value: T | T[] | null) { return Array.isArray(value) ? value[0] : value; }
-type TreatmentRow = { id: string; status: string; completed_at: string | null; services: { name: string } | { name: string }[] | null };
+type TreatmentRow = { id: string; status: string; completed_at: string | null; services: { name: string } | { name: string }[] | null; appointments: { products: { name: string } | { name: string }[] | null } | { products: { name: string } | { name: string }[] | null }[] | null };
 type PatientRow = {
   id: string; auth_user_id: string | null; patient_no: string | null; full_name: string; email: string | null; phone: string;
   date_of_birth: string | null; sex: string | null; address: string | null; civil_status: string | null; blood_type: string | null;
@@ -57,11 +57,11 @@ function serialize(row: PatientRow) {
     emergencyContactPhone: row.emergency_contact_phone || "", notes: row.notes || "", source: row.record_source,
     archivedAt: row.archived_at || null, archiveReason: row.archive_reason || "",
     completedVisits: completed.length, totalAppointments: appointments.length, lastVisit, createdAt: row.created_at,
-    procedures: (row.treatment_cases || []).map((item) => ({ id: item.id, service: first(item.services)?.name || "Treatment", status: item.status, completedAt: item.completed_at })),
+    procedures: (row.treatment_cases || []).map((item) => { const appointment = first(item.appointments); return { id: item.id, service: first(appointment?.products)?.name || first(item.services)?.name || "Treatment", status: item.status, completedAt: item.completed_at }; }),
   };
 }
 
-const select = "id, auth_user_id, patient_no, full_name, email, phone, date_of_birth, sex, address, civil_status, blood_type, allergies, medical_history, current_medications, emergency_contact_name, emergency_contact_phone, notes, record_source, created_at, archived_at, archive_reason, appointments(appointment_date, status), treatment_cases(id, status, completed_at, services(name))";
+const select = "id, auth_user_id, patient_no, full_name, email, phone, date_of_birth, sex, address, civil_status, blood_type, allergies, medical_history, current_medications, emergency_contact_name, emergency_contact_phone, notes, record_source, created_at, archived_at, archive_reason, appointments(appointment_date, status), treatment_cases(id, status, completed_at, services(name), appointments(products(name)))";
 
 async function staffAccounts() {
   const { data, error } = await adminClient().from("profiles").select("id, email").in("role", ["superadmin", "doctor", "secretary"]);

@@ -25,14 +25,14 @@ function first<T>(value: T | T[] | null | undefined) { return Array.isArray(valu
 type CategoryRel = { slug: string };
 type ServiceRel = { name: string; service_categories: CategoryRel | CategoryRel[] | null };
 type ClientRel = { full_name: string; email: string | null; phone: string };
-type AppointmentRow = { id: string; reference_no: string; appointment_date: string; appointment_time: string; status: string; service_id: string; clients: ClientRel | ClientRel[] | null; services: ServiceRel | ServiceRel[] | null; treatment_cases: Record<string, unknown>[] | null };
+type AppointmentRow = { id: string; reference_no: string; appointment_date: string; appointment_time: string; status: string; service_id: string; clients: ClientRel | ClientRel[] | null; services: ServiceRel | ServiceRel[] | null; products: { name: string } | { name: string }[] | null; treatment_cases: Record<string, unknown>[] | null };
 
 export async function GET(request: Request) {
   if (!await clinician(request)) return NextResponse.json({ error: "Doctor access is required." }, { status: 403 });
   try {
     const database = db();
     const [appointments, protocols] = await Promise.all([
-      database.from("appointments").select("id, reference_no, appointment_date, appointment_time, status, service_id, clients(full_name, email, phone), services(name, service_categories(slug)), treatment_cases(*)").in("status", ["confirmed", "completed"]).order("appointment_date"),
+      database.from("appointments").select("id, reference_no, appointment_date, appointment_time, status, service_id, clients(full_name, email, phone), services(name, service_categories(slug)), products(name), treatment_cases(*)").in("status", ["confirmed", "completed"]).order("appointment_date"),
       database.from("treatment_protocols").select("*").eq("is_active", true),
     ]);
     if (appointments.error || protocols.error) throw appointments.error || protocols.error;
@@ -42,7 +42,7 @@ export async function GET(request: Request) {
         appointmentId: item.id, referenceNo: item.reference_no, date: item.appointment_date,
         time: item.appointment_time.slice(0, 5), appointmentStatus: item.status,
         patient: first(item.clients)?.full_name || "Unknown patient", email: first(item.clients)?.email || "",
-        phone: first(item.clients)?.phone || "", service: first(item.services)?.name || "Treatment",
+        phone: first(item.clients)?.phone || "", service: first(item.products)?.name || first(item.services)?.name || "Treatment",
         serviceId: item.service_id, case: item.treatment_cases?.[0] || null,
         protocol: (protocols.data || []).find((protocol) => protocol.service_id === item.service_id) || null,
       }));

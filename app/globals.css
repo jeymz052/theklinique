@@ -4138,6 +4138,49 @@ body:has(.landing-page) { background: #f8e1e1 url('/images/footerbg.png') center
   .dk-schedule-tabs button { padding-inline: 0.55rem; font-size: 0.64rem; }
 }
 
+/* Patient procedure history and post-consultation procedure handoff */
+.pr-record-tabs button b { min-width: 18px; padding: .12rem .32rem; border-radius: 999px; background: #f5e5ea; color: #a84863; font-size: .48rem; text-align: center; }
+.cw-add-procedure { display: grid; gap: .75rem; padding: .85rem; border: 1px solid #dce9e3; border-radius: 12px; background: #f7fcf9; }
+.cw-add-procedure-toggle { display: flex; align-items: center; gap: .65rem; width: 100%; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.cw-add-procedure-toggle > span:nth-child(2) { display: grid; flex: 1; gap: .1rem; }
+.cw-add-procedure-toggle h3 { margin: 0; }
+.cw-add-procedure-toggle em { padding: .28rem .48rem; border-radius: 999px; background: #e7f4ed; color: #4e7562; font-size: .48rem; font-style: normal; font-weight: 800; text-transform: uppercase; }
+.cw-add-procedure-toggle > i:last-child { width: 24px; color: #9a6a79; font-size: .62rem; text-align: center; transition: transform .15s; }
+.cw-add-procedure-toggle:hover h3 { color: #a74460; }
+.cw-add-procedure p { margin: 0; color: #6d7e75; font-size: .52rem; line-height: 1.5; }
+.cw-procedure-picker { display: grid; gap: .7rem; min-width: 0; }
+.cw-catalog-mode { display: grid; grid-template-columns: 1fr 1fr; gap: .35rem; padding: .3rem; border: 1px solid #e5dce0; border-radius: 10px; background: #f4f0f1; }
+.cw-catalog-mode button { display: flex; align-items: center; justify-content: center; gap: .4rem; padding: .58rem; border: 0; border-radius: 7px; background: transparent; color: #806b72; font: 800 .57rem 'Jost',sans-serif; cursor: pointer; }
+.cw-catalog-mode button.active { background: #fff; color: #a84160; box-shadow: 0 3px 10px rgba(62,31,40,.08); }
+.cw-procedure-tools { display: flex; align-items: center; gap: .65rem; min-width: 0; }
+.cw-procedure-categories { display: flex; flex: 1; gap: .35rem; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.cw-procedure-categories::-webkit-scrollbar { display: none; }
+.cw-procedure-categories button { flex: 0 0 auto; padding: .42rem .65rem; border: 1px solid #d9e5df; border-radius: 999px; background: #fff; color: #63766c; font: 750 .54rem 'Jost',sans-serif; cursor: pointer; }
+.cw-procedure-categories button.active { border-color: #ad5570; background: #ad5570; color: #fff; }
+.cw-procedure-search { position: relative; flex: 0 0 210px; }
+.cw-procedure-search i { position: absolute; left: .62rem; top: 50%; z-index: 1; color: #a78f97; font-size: .58rem; transform: translateY(-50%); }
+.cw-procedure-search input { width: 100%; height: 34px; box-sizing: border-box; padding: 0 .65rem 0 1.75rem; border: 1px solid #d9e5df; border-radius: 8px; background: #fff; color: #543f47; font: 600 .57rem 'Jost',sans-serif; outline: none; }
+.cw-procedure-search input:focus { border-color: #bd5874; box-shadow: 0 0 0 3px rgba(189,88,116,.08); }
+.cw-procedure-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: .5rem; max-height: 320px; overflow-y: auto; padding: .08rem; }
+.cw-procedure-grid > button { display: grid; gap: .55rem; padding: .7rem; border: 1px solid #e4ebe7; border-radius: 10px; background: #fff; color: inherit; text-align: left; cursor: pointer; transition: border-color .15s,box-shadow .15s,transform .15s; }
+.cw-procedure-grid > button:hover { transform: translateY(-1px); border-color: #d8a4b4; box-shadow: 0 5px 14px rgba(91,43,57,.07); }
+.cw-procedure-grid > button.selected { border-color: #bd5874; background: #fff8fa; box-shadow: inset 3px 0 #bd5874; }
+.cw-procedure-grid > button > span:first-child { display: grid; gap: .18rem; }
+.cw-procedure-grid small { color: #a0586d; font-size: .47rem; font-weight: 800; text-transform: uppercase; }
+.cw-procedure-grid strong { color: #3f3035; font-size: .65rem; }
+.cw-procedure-grid > button p { display: -webkit-box; overflow: hidden; color: #89727a; font-size: .5rem; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.cw-procedure-meta { display: flex; align-items: center; gap: .45rem; padding-top: .45rem; border-top: 1px solid #f1e8eb; }
+.cw-procedure-meta em { flex: 1; color: #8b777e; font-size: .49rem; font-style: normal; }
+.cw-procedure-meta b { color: #4b383f; font-size: .56rem; }
+.cw-procedure-meta > i { color: #bd5874; font-size: .72rem; }
+.cw-procedure-empty { grid-column: 1/-1; padding: 1.5rem; border: 1px dashed #dacfd3; border-radius: 10px; text-align: center; }
+.cw-procedure-selection { display: flex!important; align-items: center; justify-content: space-between; gap: .7rem; padding: .65rem .7rem!important; border: 1px solid #eadde1!important; border-radius: 10px; background: #fff; }
+.cw-procedure-selection > span { display: grid; grid-template-columns: 26px auto; align-items: center; column-gap: .5rem; }
+.cw-procedure-selection > span > i { grid-row: 1/3; color: #bd5874; font-size: 1rem; }
+.cw-procedure-selection small { color: #9b858c; font-size: .46rem; text-transform: uppercase; }
+.cw-procedure-selection strong { color: #49373d; font-size: .62rem; }
+@media (max-width: 760px) { .cw-procedure-tools,.cw-procedure-selection { align-items: stretch; flex-direction: column; }.cw-procedure-search { flex-basis: auto; }.cw-procedure-grid { grid-template-columns: 1fr; }.cw-procedure-selection button { justify-content: center; } }
+
 /* Add modal */
 .dk-modal-overlay {
   position: fixed; inset: 0; z-index: 300;

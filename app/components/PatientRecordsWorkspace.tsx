@@ -32,7 +32,7 @@ export default function PatientRecordsWorkspace({ onBookPatient, onResolveAppoin
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [recordTab, setRecordTab] = useState<"personal" | "contact" | "medical">("personal");
+  const [recordTab, setRecordTab] = useState<"personal" | "contact" | "medical" | "procedures">("personal");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [addStep,setAddStep]=useState(1);
@@ -107,6 +107,7 @@ export default function PatientRecordsWorkspace({ onBookPatient, onResolveAppoin
         <button type="button" className={recordTab === "personal" ? "active" : ""} onClick={() => setRecordTab("personal")}><i className="fa-solid fa-user" /> Personal</button>
         <button type="button" className={recordTab === "contact" ? "active" : ""} onClick={() => setRecordTab("contact")}><i className="fa-solid fa-address-book" /> Contact &amp; Emergency</button>
         <button type="button" className={recordTab === "medical" ? "active" : ""} onClick={() => setRecordTab("medical")}><i className="fa-solid fa-notes-medical" /> Medical Record</button>
+        <button type="button" className={recordTab === "procedures" ? "active" : ""} onClick={() => setRecordTab("procedures")}><i className="fa-solid fa-syringe" /> Procedures <b>{draft.procedures.length}</b></button>
       </nav>
       {error && <p className="bk-form-error" role="alert">{error}</p>}{notice && <p className="pr-success" role="status">{notice}</p>}
       {recordTab === "personal" && <section className="pr-form-section"><header><i className="fa-solid fa-address-card" /><div><h3>Personal information</h3><p>Core identity information used in booking and the medical chart.</p></div></header><div className="pr-form-grid">
@@ -130,8 +131,8 @@ export default function PatientRecordsWorkspace({ onBookPatient, onResolveAppoin
         <label className="wide"><span>Current medications</span><textarea value={draft.currentMedications} onChange={(event) => setDraft({ ...draft, currentMedications: event.target.value })} /></label>
         <label className="wide"><span>Internal clinic notes</span><textarea value={draft.notes} onChange={(event) => setDraft({ ...draft, notes: event.target.value })} /></label>
         <div className="pr-medical-summary wide"><div><span>Total appointments</span><strong>{draft.totalAppointments}</strong></div><div><span>Completed visits</span><strong>{draft.completedVisits}</strong></div><div><span>Last completed visit</span><strong>{draft.lastVisit ? new Date(`${draft.lastVisit}T00:00:00`).toLocaleDateString("en-PH", { dateStyle: "long" }) : "No completed visit"}</strong></div></div>
-        <div className="pr-procedure-history wide"><h4>Procedure history</h4>{draft.procedures.length ? draft.procedures.map((procedure) => <div key={procedure.id}><span><i className="fa-solid fa-syringe" /><strong>{procedure.service}</strong></span><em>{procedure.status}</em><small>{procedure.completedAt ? new Date(procedure.completedAt).toLocaleDateString("en-PH", { dateStyle: "medium" }) : "In progress"}</small></div>) : <p>No treatment procedures recorded yet.</p>}</div>
       </div></section>}
+      {recordTab === "procedures" && <section className="pr-form-section"><header><i className="fa-solid fa-syringe" /><div><h3>Procedure history</h3><p>All procedures documented for this patient, including treatments started immediately after a consultation.</p></div></header><div className="pr-procedure-history wide">{draft.procedures.length ? draft.procedures.map((procedure) => <div key={procedure.id}><span><i className="fa-solid fa-syringe" /><strong>{procedure.service}</strong></span><em>{procedure.status.replaceAll("_", " ")}</em><small>{procedure.completedAt ? new Date(procedure.completedAt).toLocaleDateString("en-PH", { dateStyle: "medium" }) : "In progress"}</small></div>) : <p>No treatment procedures recorded yet.</p>}</div></section>}
     </form>
   </div>;
 
