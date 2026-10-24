@@ -2,6 +2,7 @@
 
 # dependencies
 /node_modules
+/.npm-cache/
 /.pnp
 .pnp.*
 .yarn/*
@@ -12,6 +13,9 @@
 
 # testing
 /coverage
+/test-results/
+/playwright-report/
+/clinical-test-results/
 
 # next.js
 /.next/

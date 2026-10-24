@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import { notifyReservationPaid } from "@/lib/bookingNotifications";
+import { bookingPayment } from "@/lib/consultation";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -34,7 +35,7 @@ export async function POST(request: Request) {
     const clientIds = (clients || []).map((client) => client.id);
     if (!clientIds.length) return NextResponse.json({ confirmed: false, error: "No patient record was found." }, { status: 404 });
 
-    let appointmentQuery = admin.from("appointments").select("id, reference_no, status, visit_kind, payment_expires_at").in("client_id", clientIds).order("created_at", { ascending: false }).limit(1);
+    let appointmentQuery = admin.from("appointments").select("id, reference_no, status, visit_kind, consultation_mode, payment_expires_at").in("client_id", clientIds).order("created_at", { ascending: false }).limit(1);
     if (requestedAppointmentId) appointmentQuery = appointmentQuery.eq("id", requestedAppointmentId);
     else appointmentQuery = appointmentQuery.in("status", ["pending", "confirmed"]);
     const { data: appointments, error: appointmentError } = await appointmentQuery;
@@ -48,7 +49,7 @@ export async function POST(request: Request) {
     if (paymentError) throw paymentError;
     if (appointment.payment_expires_at && new Date(appointment.payment_expires_at).getTime() <= Date.now() && payment?.status !== "paid") {
       await admin.from("appointments").update({ status: "cancelled", cancellation_reason: "Reservation payment deadline expired", cancelled_at: new Date().toISOString() }).eq("id", appointment.id).eq("status", "pending");
-      return NextResponse.json({ confirmed: false, error: "The 15-minute payment window expired. Please book again." }, { status: 409 });
+      return NextResponse.json({ confirmed: false, error: "The 30-minute payment window expired. Please book again." }, { status: 409 });
     }
     if (!payment?.paymongo_payment_id) return NextResponse.json({ confirmed: false, error: "The reservation checkout was not found." }, { status: 409 });
     if (payment.status === "paid") {
@@ -63,14 +64,15 @@ export async function POST(request: Request) {
     const attributes = checkout?.data?.attributes;
     const paidPayment = Array.isArray(attributes?.payments) ? attributes.payments.find((item: { attributes?: { status?: string } }) => item?.attributes?.status === "paid") : null;
     const succeeded = Boolean(paidPayment || attributes?.payment_intent?.attributes?.status === "succeeded");
-    if (!succeeded || attributes?.reference_number !== appointment.reference_no) {
+    const terms = bookingPayment(appointment.consultation_mode === "online" ? "online" : "clinic", appointment.visit_kind === "consultation_follow_up");
+    const paidAttributes = paidPayment?.attributes || attributes?.payment_intent?.attributes;
+    if (!succeeded || attributes?.reference_number !== appointment.reference_no || paidAttributes?.amount !== terms.amount * 100 || paidAttributes?.currency !== "PHP") {
       return NextResponse.json({ confirmed: false, appointmentId: appointment.id });
     }
 
     const paidAtSeconds = paidPayment?.attributes?.paid_at;
     const paidAt = typeof paidAtSeconds === "number" ? new Date(paidAtSeconds * 1000).toISOString() : new Date().toISOString();
-    const isFollowUp = appointment.visit_kind === "consultation_follow_up";
-    const { error: paymentUpdateError } = await admin.from("payments").update({ status: "paid", paid_at: paidAt, metadata: isFollowUp ? { kind: "consultation_follow_up_fee", checkout_session: checkout.data, credited_to_visit: false, full_fee: true } : { kind: "reservation_fee", checkout_session: checkout.data, credited_to_visit: true } }).eq("id", payment.id);
+    const { error: paymentUpdateError } = await admin.from("payments").update({ status: "paid", paid_at: paidAt, metadata: { ...terms, checkout_session: checkout.data } }).eq("id", payment.id);
     if (paymentUpdateError) throw paymentUpdateError;
     const { error: appointmentUpdateError } = await admin.from("appointments").update({ status: "confirmed" }).eq("id", appointment.id).eq("status", "pending");
     if (appointmentUpdateError) throw appointmentUpdateError;

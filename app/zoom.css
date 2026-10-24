@@ -1,0 +1,89 @@
+.zoom-call { position:fixed; left:max(20px, calc((100vw - 720px) / 2)); top:max(20px, calc((100dvh - 660px) / 2)); width:min(720px, calc(100vw - 40px)); height:min(660px, calc(100dvh - 40px)); min-width:0; min-height:0; box-sizing:border-box; z-index:1050; display:flex; flex-direction:column; background:#fff; border:1px solid #efc9d6; border-radius:20px; box-shadow:0 12px 60px #5a173c30; overflow:hidden; color:#62394a; font-family:'Jost',sans-serif; }
+.zoom-call:not(.minimized) { container-type:size; container-name:zoom-window; }
+.zoom-call-header { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:16px; background:#fff1f6; border-bottom:1px solid #f1dbe4; flex-shrink:0; }
+.zoom-call-header span { display:block; font-size:11px; text-transform:uppercase; letter-spacing:.08em; font-weight:700; color:#b44268; }
+.zoom-call-header h2 { font-size:15px; margin:5px 0 0; line-height:1.35; overflow-wrap:anywhere; }
+.zoom-call-drag-handle { display:flex; align-items:center; gap:10px; min-width:0; padding:0; border:0; background:transparent; color:inherit; font:inherit; text-align:left; cursor:grab; touch-action:none; user-select:none; }
+.zoom-call-drag-handle > i { color:#bf6f8d; font-size:17px; }
+.zoom-call-drag-handle > span { min-width:0; text-transform:none; letter-spacing:normal; }
+.zoom-call-drag-handle > span > span { font-size:10px; text-transform:uppercase; }
+.zoom-call-drag-handle strong { display:block; margin-top:4px; font-size:15px; line-height:1.3; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.zoom-call-drag-handle small { display:block; margin-top:3px; font-size:10px; color:#a2798b; font-weight:400; }
+.zoom-call-drag-handle:disabled { cursor:default; opacity:1; }
+.zoom-call-drag-handle:disabled > i, .zoom-call-drag-handle:disabled small { display:none; }
+.zoom-call.dragging, .zoom-call.dragging .zoom-call-drag-handle { cursor:grabbing; user-select:none; }
+.zoom-call.dragging iframe, .zoom-call.resizing iframe { pointer-events:none; }
+.zoom-call.resizing, .zoom-call.resizing * { user-select:none; cursor:inherit; }
+.zoom-resize-handle { position:absolute; z-index:3; display:block; padding:0; border:0; border-radius:0; background:transparent; touch-action:none; }
+.zoom-resize-handle:hover, .zoom-resize-handle:focus-visible { background:#bd42671f; }
+.zoom-resize-n, .zoom-resize-s { left:18px; right:18px; height:7px; cursor:ns-resize; }
+.zoom-resize-n { top:0; }.zoom-resize-s { bottom:0; }
+.zoom-resize-e, .zoom-resize-w { top:18px; bottom:18px; width:7px; cursor:ew-resize; }
+.zoom-resize-e { right:0; }.zoom-resize-w { left:0; }
+.zoom-resize-ne, .zoom-resize-se, .zoom-resize-sw, .zoom-resize-nw { width:20px; height:20px; }
+.zoom-resize-ne { top:0; right:0; cursor:nesw-resize; }
+.zoom-resize-se { bottom:0; right:0; cursor:nwse-resize; }
+.zoom-resize-sw { bottom:0; left:0; cursor:nesw-resize; }
+.zoom-resize-nw { top:0; left:0; cursor:nwse-resize; }
+.zoom-resize-se::after { content:""; position:absolute; right:5px; bottom:5px; width:10px; height:10px; background:repeating-linear-gradient(135deg,transparent 0 3px,#b86d88 3px 5px); clip-path:polygon(100% 0,100% 100%,0 100%); }
+.zoom-call-controls { display:flex; gap:5px; align-items:center; flex-shrink:0; }
+.zoom-call-controls button { border:1px solid #edccd8; border-radius:8px; background:#fff; color:#a73a60; cursor:pointer; min-width:34px; min-height:36px; padding:7px; font-size:13px; }
+.zoom-call-controls .zoom-leave { color:#fff; background:#bd4267; border-color:#bd4267; padding:7px 11px; }
+.zoom-call-controls button:disabled { opacity:.5; cursor:wait; }
+.zoom-call button:focus-visible { outline:3px solid #b52d5f; outline-offset:2px; }
+.zoom-call-status { padding:10px 16px; font-size:12px; background:#fffafb; border-bottom:1px solid #f5e4eb; margin:0; flex-shrink:0; line-height:1.5; }
+.zoom-call-frame { flex:1; min-height:0; overflow:hidden; }
+.zoom-call-frame[hidden] { display:none; }
+.zoom-call-frame iframe { display:block; border:0; width:100%; height:100%; background:#fff8fb; }
+.zoom-call-help { flex-shrink:0; font-size:11px; padding:10px 30px 10px 16px; margin:0; color:#916a79; border-top:1px solid #f5e4eb; line-height:1.4; }
+.zoom-call.expanded, .zoom-call:fullscreen { inset:0; width:100%; height:100dvh; border:0; border-radius:0; box-shadow:none; }
+.zoom-call:fullscreen::backdrop { background:#fff8fb; }
+.zoom-call.minimized { left:auto; top:auto; right:20px; bottom:20px; height:auto; width:min(480px, calc(100vw - 40px)); }
+@container zoom-window (max-height:480px) {
+  .zoom-call-header { padding:10px 12px; }
+  .zoom-call-drag-handle small, .zoom-call-help { display:none; }
+  .zoom-call-status { padding:7px 12px; font-size:11px; }
+}
+.zoom-setup-status { margin:20px 0; padding:20px; border:1px solid #f0d1de; border-radius:14px; background:#fff7fa; }
+.zoom-setup-status h3 { font-size:16px; margin:0 0 10px; color:#a73a60; }
+.zoom-setup-status p, .zoom-setup-status details { font-size:13px; line-height:1.6; margin:10px 0; }
+.zoom-setup-status small { display:block; margin-top:8px; }
+.zoom-setup-status li { overflow-wrap:anywhere; }
+.zoom-embedded-notice { display:flex; gap:14px; align-items:center; padding:18px; margin:22px 0; border-radius:14px; border:1px solid #f0d1de; background:#fff7fa; color:#a73a60; }
+.zoom-embedded-notice > i { font-size:22px; }
+.zoom-embedded-notice p { font-size:13px; margin:5px 0 0; line-height:1.6; color:#916a79; }
+.zoom-setup-actions { display:flex; gap:10px; flex-wrap:wrap; }
+.zoom-visit-flow { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; padding:0; margin:24px 0; list-style:none; counter-reset:zoom-flow; }
+.zoom-visit-flow li { position:relative; padding:18px 18px 18px 52px; border:1px solid #f0dbe4; border-radius:14px; background:#fffbfd; counter-increment:zoom-flow; }
+.zoom-visit-flow li::before { content:counter(zoom-flow); position:absolute; top:18px; left:16px; width:24px; height:24px; display:grid; place-items:center; background:#f8e2ec; color:#a73a60; font-size:12px; font-weight:700; border-radius:50%; }
+.zoom-visit-flow strong, .zoom-visit-flow span { display:block; font-size:13px; }
+.zoom-visit-flow span { margin-top:6px; color:#916a79; line-height:1.6; }
+@media (max-width:640px) { .zoom-visit-flow { grid-template-columns:1fr; } }
+.consultation-meeting-card > a { display:block; margin-top:12px; font-size:13px; }
+@media (max-width:899px) {
+  .zoom-call, .zoom-call.expanded { top:0; left:0; right:0; bottom:0; width:100%; height:100dvh; border:0; border-radius:0; }
+  .zoom-call.minimized { top:auto; bottom:12px; left:12px; right:auto; width:calc(100vw - 24px); height:auto; border:1px solid #efc9d6; border-radius:14px; }
+  .zoom-call-header { padding:12px; gap:8px; }
+  .zoom-call-header h2 { font-size:13px; }
+}
+.patient-dashboard .patient-topbar { display:flex; align-items:center; background:#fffcfd; isolation:isolate; }
+.patient-page-heading { min-width:0; flex:1; }
+.patient-page-heading p { margin:0; }
+.patient-dashboard .patient-topbar .patient-page-heading .dk-workspace-title { display:block; margin-top:3px; }
+.patient-dashboard .dk-body { min-height:0; box-sizing:border-box; }
+.patient-online-workspace { display:grid; gap:1.25rem; min-width:0; }
+.patient-online-workspace .online-page-hero { display:grid; grid-template-columns:minmax(0,1fr) auto; min-width:0; }
+.patient-online-workspace .online-page-hero > div { min-width:0; }
+.patient-online-workspace .online-consultation-guide { margin:0; }
+.patient-online-workspace .online-consultation-guide > div { min-width:0; }
+.patient-online-workspace .online-visit-list > article { display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:start; }
+.online-visit-meta { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+.online-visit-meta .clinical-pill { text-transform:capitalize; }
+.online-visit-schedule { display:flex; align-items:center; flex-wrap:wrap; gap:8px 20px; margin:12px 0 7px; font-size:13px; color:#80596c; }
+.online-visit-schedule i { color:#b95b7e; margin-right:4px; }
+.online-visit-details .online-join-schedule { width:fit-content; margin-top:12px; padding:9px 12px; border:1px solid #f1dce5; border-radius:9px; background:#fff7fa; color:#93516d; }
+.online-join-label { max-width:200px; font-size:11px; line-height:1.5; text-align:center; color:#9a7587; }
+.online-visit-actions button:disabled { opacity:.58; cursor:not-allowed; }
+@media (max-width:1100px) { .patient-online-workspace .online-visit-list > article { grid-template-columns:auto minmax(0,1fr); }.patient-online-workspace .online-visit-actions { grid-column:2; width:auto; }.online-join-label { text-align:left; } }
+@media (max-width:800px) { .patient-online-workspace .online-page-hero { grid-template-columns:minmax(0,1fr); } }
+@media (max-width:540px) { .patient-online-workspace .online-visit-list > article { grid-template-columns:minmax(0,1fr); }.patient-online-workspace .online-visit-actions { grid-column:1; }.patient-online-workspace .online-page-hero > .dk-btn { width:100%; justify-content:center; }.patient-online-workspace .online-visit-actions .dk-btn { width:100%; justify-content:center; }.zoom-call-drag-handle strong { font-size:13px; }.zoom-call-controls .zoom-leave { padding:7px 8px; } }

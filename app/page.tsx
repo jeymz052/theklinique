@@ -1,5 +1,5 @@
 "use client";
-/* eslint-disable @next/next/no-img-element */
+import PublicImage from "@/app/components/PublicImage";
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
@@ -38,6 +38,7 @@ export default function Home() {
   const [heroSlide, setHeroSlide] = useState(0);
   const heroMedia = content?.heroMedia || [];
   const activeHeroSlide = heroMedia.length ? heroSlide % heroMedia.length : 0;
+  const activeHeroType = heroMedia[activeHeroSlide]?.type;
   const textFont=(key:string)=>{const font=normalizeLandingFont(content?.textFonts?.[key]);return font==="default"?"":` text-font-${font}`};
   const dynamicFontCss=Object.entries(content?.textFonts||{}).flatMap(([key,value])=>{const font=normalizeLandingFont(value),families={elegant:"'Cormorant Garamond',Georgia,serif",modern:"'Jost',Arial,sans-serif",cursive:"'Allura','Segoe Script','Brush Script MT',cursive",classic:"Georgia,'Times New Roman',serif",clean:"Arial,Helvetica,sans-serif",default:""},family=families[font];if(!family)return[];let selector="";let match=key.match(/^service\.(\d+)\.(name|tagline)$/);if(match)selector=`.services-grid .service-card:nth-child(${Number(match[1])+1}) .service-card-${match[2]}`;match=key.match(/^serviceIcon\.(\d+)\.name$/);if(match)selector=`.services-bar .service-icon-item:nth-child(${Number(match[1])+1}) .service-icon-name`;match=key.match(/^social\.(\d+)\.title$/);if(match)selector=`.landing-social-posts article:nth-child(${Number(match[1])+1}) header span,.landing-social-posts article:nth-child(${Number(match[1])+1}) strong`;match=key.match(/^faq\.(\d+)\.(question|answer)$/);if(match)selector=`.landing-faq-list details:nth-child(${Number(match[1])+1}) ${match[2]==="question"?"summary":"p"}`;match=key.match(/^gallery\.(\d+)\.title$/);if(match){const index=Number(match[1])+1,count=content?.galleryMedia?.length||0;selector=`.landing-results-track .landing-result-card:nth-child(${index}) h3,.landing-results-track .landing-result-card:nth-child(${index+count}) h3`}return selector?[`${selector}{font-family:${family}!important}`]:[]}).join("\n");
   const openBooking = (categoryHint: string | null = null) => {
@@ -87,10 +88,11 @@ export default function Home() {
 
   useEffect(() => { fetch("/api/landing-content").then(async response => { const result = await response.json(); if (response.ok) setContent(result.content); }).catch(() => undefined); }, []);
   useEffect(() => {
-    if (heroMedia.length < 2) return;
+    // A video remains on its slide until the visitor chooses another slide.
+    if (heroMedia.length < 2 || activeHeroType === "video") return;
     const timer = window.setTimeout(() => setHeroSlide((current) => (current + 1) % heroMedia.length), 5000);
     return () => window.clearTimeout(timer);
-  }, [heroSlide, heroMedia.length]);
+  }, [heroSlide, heroMedia.length, activeHeroType]);
   useEffect(() => {
     const root = document.querySelector<HTMLElement>(".landing-page");
     if (!root) return;
@@ -172,7 +174,7 @@ export default function Home() {
       <nav className="navbar">
         <div className="nav-left">
           <Link href="/" className="nav-logo" aria-label="The Klinique Home">
-            <img
+            <PublicImage
               src="/images/the_klinique_logo-removebg-preview.png"
               alt="The Klinique Logo"
               className="nav-logo-img"
@@ -216,7 +218,7 @@ export default function Home() {
 
       {/* ── HERO ── */}
       <section className="hero" id="home" style={{ paddingTop: "88px", order:sectionOrder("home") }}>
-        <div className="hero-bg">{heroMedia[activeHeroSlide]?.type === "video" ? <video key={`${activeHeroSlide}-${heroMedia[activeHeroSlide].url}`} src={heroMedia[activeHeroSlide].url} autoPlay muted loop playsInline /> : <Image key={`${activeHeroSlide}-${heroMedia[activeHeroSlide]?.url || "default"}`} src={heroMedia[activeHeroSlide]?.url || "/images/herobg.png"} alt={heroMedia[activeHeroSlide]?.alt || "The Klinique — Your unique beauty in mind"} fill style={{ objectFit: "cover", objectPosition: "center right" }} priority={activeHeroSlide === 0} quality={90} unoptimized={Boolean(heroMedia[activeHeroSlide]?.url?.startsWith("http"))} />}</div>
+        <div className="hero-bg">{heroMedia[activeHeroSlide]?.type === "video" ? <video preload="none" key={`${activeHeroSlide}-${heroMedia[activeHeroSlide].url}`} src={heroMedia[activeHeroSlide].url} controls muted playsInline poster="/images/herobg.png" /> : <PublicImage key={`${activeHeroSlide}-${heroMedia[activeHeroSlide]?.url || "default"}`} src={heroMedia[activeHeroSlide]?.url || "/images/herobg.png"} alt={heroMedia[activeHeroSlide]?.alt || "The Klinique — Your unique beauty in mind"} fill style={{ objectFit: "cover", objectPosition: "center right" }} loading="eager" fetchPriority={activeHeroSlide === 0 ? "high" : "auto"} sizes="100vw" />}</div>
         <div className="hero-overlay" />
 
         <div className="hero-content">
@@ -257,7 +259,7 @@ export default function Home() {
               style={{ cursor: "pointer", background: "none", border: "none", padding: 0 }}
             >
               <div className="service-icon-circle">
-                {s.image?<img src={s.image} alt={s.alt||s.name} className="service-icon-img" />:<i className="fa-solid fa-spa"/>}
+                {s.image?<PublicImage src={s.image} alt={s.alt||s.name} width={128} height={128} sizes="96px" className="service-icon-img" />:<i className="fa-solid fa-spa"/>}
               </div>
               <span className="service-icon-name">{s.name}</span>
             </button>
@@ -268,12 +270,11 @@ export default function Home() {
       {/* ── ABOUT / INTERIOR ── */}
       <section className="about-section" id="about" style={{order:sectionOrder("about")}}>
         <div className="about-image">
-          <Image
+          <PublicImage
             src={content?.aboutImage || "/images/the klinique interior.jpg"}
             alt="The Klinique interior — warm, luxurious medical aesthetic clinic"
             fill
             style={{ objectFit: "cover", objectPosition: "left center" }}
-            quality={88}
             sizes="(max-width: 900px) 100vw, 50vw"
           />
           <div className="about-image-overlay" />
@@ -301,7 +302,7 @@ export default function Home() {
             ].map((p) => (
               <div key={p.alt} className="pillar-item">
                 <div className="pillar-icon pillar-icon-img">
-                  <img src={p.src} alt={p.alt} />
+                  <PublicImage src={p.src} alt={p.alt} />
                 </div>
                 <span className="pillar-text">{p.label.replace(/\n/, "\u00A0")}</span>
               </div>
@@ -323,7 +324,7 @@ export default function Home() {
       {/* ── MEET THE DOCTOR ── */}
       <section className="landing-doctor-section" id="doctor" style={{order:sectionOrder("doctor")}}>
         <div className="landing-doctor-copy"><p className={`section-label landing-script-accent${textFont("doctorEyebrow")}`}>{content?.doctorEyebrow || "Meet Your Doctor"}</p><h2 className={textFont("doctorName")}>{content?.doctorName || "Dr. Kharyl"}</h2><h3 className={textFont("doctorTitle")}>{content?.doctorTitle || "Medical and Aesthetic Doctor"}</h3><p className={textFont("doctorBio")}>{content?.doctorBio || "Doctor-led, evidence-based aesthetic care shaped around your goals, comfort, and natural features."}</p><button type="button" className="btn-primary" onClick={() => setBookingOpen(true)}><i className="fa-solid fa-calendar-plus" /> Book with Dr. Kharyl</button></div>
-        <div className="landing-doctor-photo">{content?.doctorPhoto ? <img src={content.doctorPhoto} alt={content.doctorName || "Dr. Kharyl"} /> : <div><i className="fa-solid fa-user-doctor" /><span>Doctor photo can be uploaded in Settings → Website</span></div>}</div>
+        <div className="landing-doctor-photo">{content?.doctorPhoto ? <PublicImage src={content.doctorPhoto} alt={content.doctorName || "Dr. Kharyl"} /> : <div><i className="fa-solid fa-user-doctor" /><span>Doctor photo can be uploaded in Settings → Website</span></div>}</div>
       </section>
 
       {/* ── SIGNATURE SERVICES ── */}
@@ -338,7 +339,7 @@ export default function Home() {
             { image: "/images/fillers.png", alt: "Dermal fillers", name: "Fillers", tagline: "Enhance Your Natural Beauty." },
             { image: "/images/skin boosters.png", alt: "Skin boosters", name: "Skin Boosters", tagline: "Deep Hydration. Lasting Glow." },
             { image: "/images/lasers.png", alt: "Laser skin treatments", name: "Lasers", tagline: "Clearer Skin. Brighter You." },
-          ]).slice(0,showAllServices?undefined:4).map((service,index) => {const hint=service.name.toLowerCase(),aliases=hint.includes("botox")?["botox","neurotoxin"]:hint.includes("filler")?["filler"]:hint.includes("skin booster")?["skin booster"]:hint.includes("laser")?["laser"]:[hint];const relatedCategory=landingCategories.find(category=>aliases.some(alias=>`${category.name} ${category.slug}`.toLowerCase().replaceAll("-"," ").includes(alias)));const article=blogPosts.find(post=>post.service_category_id===relatedCategory?.id);return <article key={`${service.name}-${index}`} className="service-card">{service.image?<img className="service-card-img" src={service.image} alt={service.alt||service.name} style={{width:"100%",height:"auto",aspectRatio:"3/4",objectFit:"cover"}}/>:<div className="service-card-img service-card-placeholder"><i className="fa-solid fa-spa"/></div>}<div className="service-card-overlay"/><div className="service-card-content"><p className="service-card-name">{service.name}</p><p className="service-card-tagline">{service.tagline}</p><div className="service-card-actions"><button type="button" onClick={()=>openBooking(relatedCategory?.name||service.name)}><i className="fa-solid fa-calendar-plus"/> Book appointment</button><Link href={article?`/blog/${article.slug}`:"/blog"}><i className="fa-regular fa-file-lines"/> View details</Link></div></div></article>})}
+          ]).slice(0,showAllServices?undefined:4).map((service,index) => {const hint=service.name.toLowerCase(),aliases=hint.includes("botox")?["botox","neurotoxin"]:hint.includes("filler")?["filler"]:hint.includes("skin booster")?["skin booster"]:hint.includes("laser")?["laser"]:[hint];const relatedCategory=landingCategories.find(category=>aliases.some(alias=>`${category.name} ${category.slug}`.toLowerCase().replaceAll("-"," ").includes(alias)));const article=blogPosts.find(post=>post.service_category_id===relatedCategory?.id);return <article key={`${service.name}-${index}`} className="service-card">{service.image?<PublicImage className="service-card-img" src={service.image} alt={service.alt||service.name} style={{width:"100%",height:"auto",aspectRatio:"3/4",objectFit:"cover"}}/>:<div className="service-card-img service-card-placeholder"><i className="fa-solid fa-spa"/></div>}<div className="service-card-overlay"/><div className="service-card-content"><p className="service-card-name">{service.name}</p><p className="service-card-tagline">{service.tagline}</p><div className="service-card-actions"><button type="button" onClick={()=>openBooking(relatedCategory?.name||service.name)}><i className="fa-solid fa-calendar-plus"/> Book appointment</button><Link href={article?`/blog/${article.slug}`:"/blog"}><i className="fa-regular fa-file-lines"/> View details</Link></div></div></article>})}
         </div>
         <div className="landing-packages-block"><div className="landing-packages-copy"><p className="section-label">Glow Plans</p><h3>Plans for consistent care</h3><p>Explore our package types, then choose the plan that fits your goals in the booking catalog.</p><button type="button" onClick={openPackageBooking}>Book a Package <i className="fa-solid fa-arrow-right" /></button></div><div className="landing-package-list">{(landingPackageTypes.length ? landingPackageTypes : [{ category: "Laser Hair Removal", count: 1, fromPrice: 10000 }, { category: "RF Treatments", count: 1, fromPrice: 0 }]).slice(0,6).map((item) => {const relatedCategory=landingCategories.find(category=>{const haystack=`${category.name} ${category.slug}`.toLowerCase().replaceAll("-"," "),needle=item.category.toLowerCase();return haystack.includes(needle)||needle.includes(haystack)}),article=blogPosts.find(post=>post.service_category_id===relatedCategory?.id);return <article key={item.category}><span><i className="fa-solid fa-box-open" /></span><div><small>Package type</small><h4>{item.category}</h4><p>{item.count} Glow Plan{item.count === 1 ? "" : "s"} available</p><div className="landing-package-actions"><button type="button" onClick={openPackageBooking}><i className="fa-solid fa-calendar-plus"/> Book</button>{article?<Link href={`/blog/${article.slug}`}>View details <i className="fa-solid fa-arrow-right"/></Link>:<Link href="/blog">View details <i className="fa-solid fa-arrow-right"/></Link>}</div></div>{item.fromPrice > 0 && <strong>From PHP {item.fromPrice.toLocaleString()}</strong>}</article>})}</div></div>
       </section>
@@ -353,7 +354,7 @@ export default function Home() {
       </section>
 
       {/* ── BLOGS ── */}
-      <section className="landing-blog" id="blog" style={{order:sectionOrder("gallery",2)}}><header><div><p className="section-label">The Klinique Blog</p><h2>Learn with Dr. Kharyl</h2><span>Procedure guides, what to expect, aftercare, and clinic stories.</span></div><Link href="/blog">View all blogs <i className="fa-solid fa-arrow-right"/></Link></header>{blogPosts.length>0?<div>{blogPosts.slice(0,3).map(post=><Link href={`/blog/${post.slug}`} key={post.id}>{post.hero_url?(post.hero_type==="video"?<video src={post.hero_url} muted/>:<img src={post.hero_url} alt={post.title}/>):<span className="landing-blog-placeholder"><i className="fa-solid fa-newspaper"/></span>}<small>{post.category}</small><h3>{post.title}</h3><p>{post.excerpt}</p><strong>Read blog <i className="fa-solid fa-arrow-right"/></strong></Link>)}</div>:<div className="landing-blog-empty"><i className="fa-regular fa-newspaper"/><p>Published blogs will appear here.</p></div>}</section>
+      <section className="landing-blog" id="blog" style={{order:sectionOrder("gallery",2)}}><header><div><p className="section-label">The Klinique Blog</p><h2>Learn with Dr. Kharyl</h2><span>Procedure guides, what to expect, aftercare, and clinic stories.</span></div><Link href="/blog">View all blogs <i className="fa-solid fa-arrow-right"/></Link></header>{blogPosts.length>0?<div>{blogPosts.slice(0,3).map(post=><Link href={`/blog/${post.slug}`} key={post.id}>{post.hero_url?(post.hero_type==="video"?<video preload="none" playsInline src={post.hero_url} muted/>:<PublicImage src={post.hero_url} alt={post.title}/>):<span className="landing-blog-placeholder"><i className="fa-solid fa-newspaper"/></span>}<small>{post.category}</small><h3>{post.title}</h3><p>{post.excerpt}</p><strong>Read blog <i className="fa-solid fa-arrow-right"/></strong></Link>)}</div>:<div className="landing-blog-empty"><i className="fa-regular fa-newspaper"/><p>Published blogs will appear here.</p></div>}</section>
 
       {/* ── LATEST SOCIAL POSTS ── */}
       <section className="landing-social-feature" id="socials" style={{order:sectionOrder("social")}}>
@@ -375,7 +376,7 @@ export default function Home() {
             const destination = postUrl || (post.platform === "facebook" ? content?.facebookPageUrl : content?.instagramUrl) || "#socials";
             return <article key={`${postUrl}-${index}`}>
               <header><span><i className={`fa-brands fa-${post.platform}`} /> {post.title || `${post.platform} post`}</span><a href={destination} target="_blank" rel="noopener noreferrer" aria-label={`Open ${post.title || post.platform} post`}><i className="fa-solid fa-arrow-up-right-from-square" /></a></header>
-              {embedFacebookPost ? <iframe title={post.title || `Facebook post ${index + 1}`} src={`https://www.facebook.com/plugins/${embedFacebookVideo ? "video" : "post"}.php?href=${encodeURIComponent(postUrl)}&show_text=true&width=500`} width="500" height="520" scrolling="no" allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share" allowFullScreen /> : instagramEmbedUrl ? <iframe className="landing-instagram-embed" title={post.title || `Instagram post ${index + 1}`} src={instagramEmbedUrl} scrolling="no" allow="clipboard-write; encrypted-media; picture-in-picture; web-share" /> : post.platform === "facebook" ? <a className="landing-social-preview" href={destination} target="_blank" rel="noopener noreferrer"><span className="landing-social-preview-media"><img src="/images/herobg.png" alt="The Klinique" /><i className="fa-brands fa-facebook-f" /></span><strong>{post.title || "Latest from The Klinique"}</strong><span>View our latest posts on Facebook</span></a> : <a className="landing-instagram-post" href={destination} target="_blank" rel="noopener noreferrer"><i className="fa-brands fa-instagram" /><strong>{post.title || "View Instagram"}</strong><span>Open this post on Instagram</span></a>}
+              {embedFacebookPost ? <iframe title={post.title || `Facebook post ${index + 1}`} src={`https://www.facebook.com/plugins/${embedFacebookVideo ? "video" : "post"}.php?href=${encodeURIComponent(postUrl)}&show_text=true&width=500`} width="500" height="520" scrolling="no" allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share" allowFullScreen /> : instagramEmbedUrl ? <iframe className="landing-instagram-embed" title={post.title || `Instagram post ${index + 1}`} src={instagramEmbedUrl} scrolling="no" allow="clipboard-write; encrypted-media; picture-in-picture; web-share" /> : post.platform === "facebook" ? <a className="landing-social-preview" href={destination} target="_blank" rel="noopener noreferrer"><span className="landing-social-preview-media"><PublicImage src="/images/herobg.png" alt="The Klinique" /><i className="fa-brands fa-facebook-f" /></span><strong>{post.title || "Latest from The Klinique"}</strong><span>View our latest posts on Facebook</span></a> : <a className="landing-instagram-post" href={destination} target="_blank" rel="noopener noreferrer"><i className="fa-brands fa-instagram" /><strong>{post.title || "View Instagram"}</strong><span>Open this post on Instagram</span></a>}
             </article>;
           })}
         </div>
@@ -436,7 +437,7 @@ function LandingResultsBoard({items,eyebrow,title,description,badge,textFonts,or
   return <section className="landing-media-gallery landing-results-board" id="gallery" style={{order}}>
     <header><div><p className={`section-label ${font("galleryEyebrow")}`}>{eyebrow||"Before & After"}</p><h2 className={font("galleryTitle")}>{title||"Featured Results"}</h2><span className={font("galleryDescription")}>{description||"Aesthetic transformations and clinic stories."}</span></div><strong className={font("galleryBadge")}>{badge||"Results Board"}</strong></header>
     <div className="landing-results-viewport"><div className={`landing-results-track ${items.length===1?"is-single":""}`}>
-      {[...items,...items].map((item,index)=>{const originalIndex=index%items.length;const duplicate=index>=items.length;return <article className="landing-result-card" key={`${duplicate?"copy":"original"}-${item.url}-${originalIndex}`} aria-hidden={duplicate||undefined}><header><div><span>Aesthetic Results</span><h3>{item.title?.trim()||`Featured result ${originalIndex+1}`}</h3></div><small>Case {String(originalIndex+1).padStart(2,"0")}</small></header><div className="landing-result-media">{item.type==="video"?<video src={item.url} controls={!duplicate} autoPlay muted loop playsInline/>:<img src={item.url} alt={duplicate?"":item.alt}/>}</div></article>})}
+      {[...items,...items].map((item,index)=>{const originalIndex=index%items.length;const duplicate=index>=items.length;return <article className="landing-result-card" key={`${duplicate?"copy":"original"}-${item.url}-${originalIndex}`} aria-hidden={duplicate||undefined}><header><div><span>Aesthetic Results</span><h3>{item.title?.trim()||`Featured result ${originalIndex+1}`}</h3></div><small>Case {String(originalIndex+1).padStart(2,"0")}</small></header><div className="landing-result-media">{item.type==="video"?<video preload="none" playsInline src={duplicate ? undefined : item.url} controls={!duplicate} muted poster="/images/herobg.png"/>:<PublicImage src={item.url} alt={duplicate?"":item.alt}/>}</div></article>})}
     </div></div>
     <p className="landing-results-note"><i className="fa-solid fa-arrows-left-right"/> Results move continuously. Hover or focus to pause.</p>
   </section>;

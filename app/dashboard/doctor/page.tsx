@@ -12,6 +12,7 @@ import DashboardInsights from "@/app/components/DashboardInsights";
 import DoctorAppointmentWorkspace from "@/app/components/DoctorAppointmentWorkspace";
 import LiveClinicStatus from "@/app/components/LiveClinicStatus";
 import PatientRecordsWorkspace from "@/app/components/PatientRecordsWorkspace";
+import MedicalDocumentsWorkspace from "@/app/components/MedicalDocumentsWorkspace";
 import ConsultationWorkspace from "@/app/components/ConsultationWorkspace";
 import TreatmentWorkspace from "@/app/components/TreatmentWorkspace";
 import DoctorScheduleManager from "@/app/components/DoctorScheduleManager";
@@ -25,7 +26,7 @@ import { appointmentStatusLabel, fetchAppointments, rescheduleAppointment, updat
 import { fetchRescheduleRequests, reviewRescheduleRequest, type RescheduleRequest } from "@/lib/rescheduleRequests";
 
 type NavSection = "scheduling" | "clinical";
-type DoctorView = "dashboard" | "calendar" | "website-content" | "blog-builder" | "availability" | "blocked-dates" | "all-appts" | "emr" | "consultations" | "treatments" | "rooms" | "profile" | "settings";
+type DoctorView = "dashboard" | "calendar" | "website-content" | "blog-builder" | "availability" | "blocked-dates" | "all-appts" | "emr" | "consultations" | "documents" | "treatments" | "rooms" | "profile" | "settings";
 
 interface Booking extends Appointment {
   room: string;
@@ -56,7 +57,7 @@ export default function DoctorDashboard() {
   useEffect(() => {
     if (!authLoading) {
       const refresh = () => Promise.all([fetchAppointments(), fetchRescheduleRequests()])
-          .then(([appointments, requests]) => { setBookings(appointments.map((appointment) => ({ ...appointment, room: "Clinic" }))); setRescheduleRequests(requests); })
+          .then(([appointments, requests]) => { setBookings(appointments.map((appointment) => ({ ...appointment, room: appointment.consultationMode === "online" ? "Online" : "Clinic" }))); setRescheduleRequests(requests); })
           .catch((error) => setDataError(error.message));
       void refresh();
       const interval = window.setInterval(refresh, 10_000);
@@ -67,8 +68,8 @@ export default function DoctorDashboard() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const requestedView = params.get("view");
-    if (requestedView === "calendar" || requestedView === "website-content" || requestedView === "blog-builder" || requestedView === "all-appts" || requestedView === "availability" || requestedView === "blocked-dates" || requestedView === "profile" || requestedView === "settings") {
-      window.history.replaceState({}, "", "/dashboard/doctor");
+    if (requestedView === "treatments" || requestedView === "documents" || requestedView === "consultations" || requestedView === "calendar" || requestedView === "website-content" || requestedView === "blog-builder" || requestedView === "all-appts" || requestedView === "availability" || requestedView === "blocked-dates" || requestedView === "profile" || requestedView === "settings") {
+      window.history.replaceState({}, "", requestedView === "settings" && params.get("tab") === "online" ? "/dashboard/doctor?tab=online" : "/dashboard/doctor");
       queueMicrotask(() => setView(requestedView));
     }
   }, []);
@@ -101,7 +102,7 @@ export default function DoctorDashboard() {
     try {
       await updateReservationWorkflow(id, action, reason);
       const appointments = await fetchAppointments();
-      setBookings(appointments.map((appointment) => ({ ...appointment, room: "Clinic" })));
+      setBookings(appointments.map((appointment) => ({ ...appointment, room: appointment.consultationMode === "online" ? "Online" : "Clinic" })));
     } catch (error) { setDataError(error instanceof Error ? error.message : "Unable to update reservation."); }
   };
 
@@ -118,7 +119,7 @@ export default function DoctorDashboard() {
     try {
       await reviewRescheduleRequest(requestId, decision);
       const [appointments, requests] = await Promise.all([fetchAppointments(), fetchRescheduleRequests()]);
-      setBookings(appointments.map((appointment) => ({ ...appointment, room: "Clinic" })));
+      setBookings(appointments.map((appointment) => ({ ...appointment, room: appointment.consultationMode === "online" ? "Online" : "Clinic" })));
       setRescheduleRequests(requests);
     } catch (error) {
       setDataError(error instanceof Error ? error.message : "Unable to review reschedule request.");
@@ -236,6 +237,7 @@ export default function DoctorDashboard() {
             {openSections.includes("clinical") && (
               <div className="dk-nav-items">
                 <button type="button" id="nav-consultations" className={`dk-nav-item ${view === "consultations" ? "active" : ""}`} onClick={() => setView("consultations")}><i className="fa-solid fa-comment-medical" /> Consultations</button>
+                <button type="button" id="nav-documents" className={`dk-nav-item ${view === "documents" ? "active" : ""}`} onClick={() => setView("documents")}><i className="fa-solid fa-file-medical" /> Medical Documents</button>
                 <button type="button" id="nav-treatments" className={`dk-nav-item ${view === "treatments" ? "active" : ""}`} onClick={() => setView("treatments")}><i className="fa-solid fa-syringe" /> Treatment Workspace</button>
                 <button type="button" id="nav-rooms" className={`dk-nav-item ${view === "rooms" ? "active" : ""}`} onClick={() => setView("rooms")}><i className="fa-solid fa-door-open" /> Treatment Suites</button>
               </div>
@@ -293,7 +295,11 @@ export default function DoctorDashboard() {
             </p>
           </div>
           <div className="dk-topbar-actions">
-            <AppointmentNotifications appointments={bookings} onOpenSchedule={() => setView("all-appts")} />
+            <AppointmentNotifications appointments={bookings} onOpenSchedule={() => setView("all-appts")} onOpenNotification={(href) => {
+              const target = new URL(href, window.location.origin).searchParams.get("view");
+              if (target === "documents" || target === "consultations" || target === "all-appts") setView(target);
+              else setView("all-appts");
+            }} />
             <DashboardAccountMenu name={doctorName} role={role === "superadmin" ? "Super Administrator" : "Attending Physician"} email={user?.email} onSignOut={handleSignOut} signingOut={signingOut} onProfileClick={() => setView("profile")} onSettingsClick={() => setView("settings")} />
           </div>
         </header>
@@ -463,8 +469,9 @@ export default function DoctorDashboard() {
           {view === "emr" && (
             <PatientRecordsWorkspace onBookPatient={openPatientBooking} onResolveAppointment={() => setView("all-appts")} />
           )}
-          {view === "consultations" && <ConsultationWorkspace appointments={bookings} initialAppointmentId={clinicalAppointmentId} onOpenRecords={() => setView("emr")} onOpenProcedure={async (appointmentId) => { setClinicalAppointmentId(appointmentId); setView("treatments"); }} onCompleted={async () => { const appointments = await fetchAppointments(); setBookings(appointments.map((appointment) => ({ ...appointment, room: "Clinic" }))); }} />}
-          {view === "treatments" && <TreatmentWorkspace initialAppointmentId={clinicalAppointmentId} onCompleted={async () => { const appointments = await fetchAppointments(); setBookings(appointments.map((appointment) => ({ ...appointment, room: "Clinic" }))); }} />}
+          {view === "documents" && <MedicalDocumentsWorkspace doctor />}
+          {view === "consultations" && <ConsultationWorkspace appointments={bookings} initialAppointmentId={clinicalAppointmentId} onOpenRecords={() => setView("emr")} onOpenProcedure={async (appointmentId) => { setClinicalAppointmentId(appointmentId); setView("treatments"); }} onCompleted={async () => { const appointments = await fetchAppointments(); setBookings(appointments.map((appointment) => ({ ...appointment, room: appointment.consultationMode === "online" ? "Online" : "Clinic" }))); }} />}
+          {view === "treatments" && <TreatmentWorkspace appointments={bookings} onOpenRecords={() => setView("emr")} initialAppointmentId={clinicalAppointmentId} onCompleted={async () => { const appointments = await fetchAppointments(); setBookings(appointments.map((appointment) => ({ ...appointment, room: appointment.consultationMode === "online" ? "Online" : "Clinic" }))); }} />}
           {(view === "settings" || view === "profile") && <StaffSettingsWorkspace key={view} email={user?.email || ""} initialTab={view === "profile" ? "profile" : "general"} />}
         </div>
       </main>

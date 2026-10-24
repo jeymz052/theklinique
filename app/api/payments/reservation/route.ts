@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
-import { RESERVATION_FEE_CENTAVOS, RESERVATION_FEE_PHP } from "@/lib/reservation";
+import { bookingPayment } from "@/lib/consultation";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -34,7 +34,7 @@ export async function POST(request: Request) {
     const admin = getAdminClient();
     const { data: appointment, error: appointmentError } = await admin
       .from("appointments")
-      .select("id, reference_no, visit_kind, payment_expires_at, clients!inner(email, full_name, phone)")
+      .select("id, reference_no, visit_kind, consultation_mode, payment_expires_at, clients!inner(email, full_name, phone)")
       .eq("id", appointmentId)
       .eq("status", "pending")
       .eq("clients.email", user.email)
@@ -47,6 +47,18 @@ export async function POST(request: Request) {
     const client = Array.isArray(appointment.clients) ? appointment.clients[0] : appointment.clients;
     if (!client) return NextResponse.json({ error: "Patient details were not found for this appointment." }, { status: 404 });
     const isFollowUp = appointment.visit_kind === "consultation_follow_up";
+    const isOnline = appointment.consultation_mode === "online";
+    const terms = bookingPayment(isOnline ? "online" : "clinic", isFollowUp);
+    const { data: payment, error: paymentError } = await admin.from("payments")
+      .select("id, status, metadata").eq("appointment_id", appointment.id).eq("amount", terms.amount)
+      .order("created_at", { ascending: false }).limit(1).maybeSingle();
+    if (paymentError) throw paymentError;
+    if (!payment || !["pending", "awaiting_payment", "failed"].includes(payment.status)) {
+      return NextResponse.json({ error: "This fee is already settled or no longer payable. Verify payment or contact the clinic." }, { status: 409 });
+    }
+    if (payment.status === "awaiting_payment" && typeof payment.metadata?.checkout_url === "string") {
+      return NextResponse.json({ checkoutUrl: payment.metadata.checkout_url });
+    }
     if (!paymongoSecretKey) {
       return NextResponse.json({ error: "PayMongo is not configured yet. Add PAYMONGO_SECRET_KEY to enable reservation payments." }, { status: 503 });
     }
@@ -66,9 +78,9 @@ export async function POST(request: Request) {
                 email: client.email,
                 phone: client.phone,
               },
-              line_items: [{ amount: RESERVATION_FEE_CENTAVOS, currency: "PHP", name: isFollowUp ? "The Klinique follow-up check-up" : "The Klinique reservation fee", quantity: 1 }],
+              line_items: [{ amount: terms.amount * 100, currency: "PHP", name: isOnline ? "The Klinique online consultation" : isFollowUp ? "The Klinique follow-up check-up" : "The Klinique reservation fee", quantity: 1 }],
               payment_method_types: ["qrph"],
-              description: `${isFollowUp ? "Full follow-up check-up fee" : "Reservation fee"} for ${appointment.reference_no}`,
+              description: `${isOnline ? "Full online consultation fee" : isFollowUp ? "Full follow-up check-up fee" : "Reservation fee"} for ${appointment.reference_no}`,
               reference_number: appointment.reference_no,
               success_url: `${origin}/dashboard/patient?payment=return&appointment=${encodeURIComponent(appointment.id)}`,
               cancel_url: `${origin}/dashboard/patient?payment=cancelled&appointment=${encodeURIComponent(appointment.id)}`,
@@ -90,14 +102,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "PayMongo did not return a checkout URL." }, { status: 502 });
     }
 
-    const { error: paymentUpdateError } = await admin
+    const { data: updatedPayments, error: paymentUpdateError } = await admin
       .from("payments")
-      .update({ paymongo_payment_id: paymongo.data.id, status: "awaiting_payment", metadata: isFollowUp ? { kind: "consultation_follow_up_fee", checkout_id: paymongo.data.id, credited_to_visit: false, full_fee: true } : { kind: "reservation_fee", checkout_id: paymongo.data.id, credited_to_visit: true } })
-      .eq("appointment_id", appointment.id)
-      .eq("amount", RESERVATION_FEE_PHP);
+      .update({ paymongo_payment_id: paymongo.data.id, status: "awaiting_payment", metadata: { ...terms, checkout_id: paymongo.data.id, checkout_url: checkoutUrl } })
+      .eq("id", payment.id)
+      .in("status", ["pending", "awaiting_payment", "failed"])
+      .select("id");
     if (paymentUpdateError) {
       throw paymentUpdateError;
     }
+    if (!updatedPayments?.length) return NextResponse.json({ error: "Payment status changed. Verify payment before trying again." }, { status: 409 });
 
     return NextResponse.json({ checkoutUrl });
   } catch (error) {

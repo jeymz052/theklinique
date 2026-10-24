@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { RESERVATION_FEE_LABEL } from "@/lib/reservation";
+import { ONLINE_CONSULTATION_FEE, ONLINE_CONSULTATION_SLUG } from "@/lib/consultation";
 import type { BookingSlot } from "@/lib/bookingAvailability";
 import { blockedDatePeriodLabel, groupBlockedDates, type PublicBlockedDate } from "@/lib/blockedDates";
 
@@ -128,11 +129,11 @@ type BookingType = "consultation" | "treatment";
 type CatalogView = "treatments" | "packages";
 type IntakeQuestion={id:string;system_key:string|null;label:string;placeholder:string;input_type:"text"|"textarea"|"yes_no";applies_to:"both"|"consultation"|"treatment";required:boolean;active:boolean;sort_order:number};
 
-function BookingPolicyModal({ type, onClose }: { type: BookingPolicy; onClose: () => void }) {
+function BookingPolicyModal({ type, onClose, online = false }: { type: BookingPolicy; onClose: () => void; online?: boolean }) {
   const isTerms = type === "terms";
   const title = isTerms ? "Terms & Conditions" : "Cancellation Policy";
   const points = isTerms
-    ? ["A consultation may be required before a treatment is approved.", "Please provide complete and accurate health information.", `Your ${RESERVATION_FEE_LABEL} reservation fee is credited to your clinic bill.`]
+    ? ["A consultation may be required before a treatment is approved.", "Please provide complete and accurate health information.", online ? "The PHP 600 online consultation fee is the full visit fee, paid through QR Ph via PayMongo." : `Your ${RESERVATION_FEE_LABEL} reservation fee is credited to your clinic bill.`]
     : ["Please reschedule or cancel at least 24 hours before your appointment.", "Late cancellations and no-shows may forfeit the reservation fee.", "Rescheduled appointments remain subject to clinic availability."];
 
   return (
@@ -214,6 +215,8 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
     : catalogServices.find((item) => item.id === selectedService);
   const isPackageOnly = service?.slug === PACKAGE_BOOKING_SERVICE_SLUG;
   const isConsultationFollowUp = service?.slug === "follow-up-check-up" && Boolean(parentAppointmentId);
+  const isOnlineConsultation = service?.slug === ONLINE_CONSULTATION_SLUG;
+  const paymentLabel = isOnlineConsultation ? "PHP 600" : RESERVATION_FEE_LABEL;
   const cartProducts = products.filter((item) => cartProductIds.includes(item.id));
   const packageGroups = products.reduce<Array<{ key: string; label: string; category: string; products: Product[] }>>((groups, product) => {
     const key = packageGroupKey(product);
@@ -235,7 +238,7 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
   const selectedCategoryRecord = categories.find((item) => item.id === service?.category_id);
   const isConsultationOnly = selectedCategoryRecord?.slug === "consultations";
   const visibleTreatmentServices = catalogServices.filter((item) => item.slug !== PACKAGE_BOOKING_SERVICE_SLUG && categories.find((category) => category.id === item.category_id)?.slug !== "consultations" && (!selectedCategory || item.category_id === selectedCategory));
-  const treatmentTotal = (isPackageOnly ? 0 : service?.price || 0) + cartTreatments.reduce((sum, item) => sum + Number(item.price), 0);
+  const treatmentTotal = (isOnlineConsultation ? ONLINE_CONSULTATION_FEE : isPackageOnly ? 0 : service?.price || 0) + cartTreatments.reduce((sum, item) => sum + Number(item.price), 0);
   const packageTotal = cartProducts.reduce((sum, item) => sum + Number(item.price), 0);
   const cartItemCount = (service && !isPackageOnly ? 1 : 0) + cartTreatments.length + cartProducts.length;
   const grandTotal = treatmentTotal + packageTotal;
@@ -372,6 +375,17 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
         const saved = window.localStorage.getItem(BOOKING_DRAFT_KEY);
         if (saved) {
           const draft = JSON.parse(saved);
+          setForm((current) => ({ ...current, ...(draft.form || {}) }));
+          // A direct service link takes priority over a previous booking selection.
+          if (initialServiceSlug) {
+            setStep(0);
+            setResumeReviewAfterAuth(false);
+            setCartProductIds([]);
+            setCartTreatmentIds([]);
+            setSelectedDate(null);
+            setSelectedTime(null);
+            return;
+          }
           const savedStep = Math.min(Math.max(Number(draft.step) || 0, 0), 3);
           setStep(savedStep === 3 && draft.authenticated !== true ? 2 : savedStep);
           setResumeReviewAfterAuth(draft.resumeReviewAfterAuth === true);
@@ -383,7 +397,6 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
           }
           setCartProductIds(Array.isArray(draft.cartProductIds) ? draft.cartProductIds : []);
           setCartTreatmentIds(Array.isArray(draft.cartTreatmentIds) ? draft.cartTreatmentIds : []);
-          setForm((current) => ({ ...current, ...(draft.form || {}) }));
           setSelectedDate(typeof draft.selectedDate === "string" ? draft.selectedDate : null);
           setSelectedTime(typeof draft.selectedTime === "string" ? draft.selectedTime : null);
         }
@@ -394,7 +407,7 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
       }
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [initialCatalogView]);
+  }, [initialCatalogView, initialServiceSlug]);
 
   useEffect(() => {
     if (!draftRestored) return;
@@ -497,7 +510,7 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
     setCartProductIds([]);
     if (type === "consultation") {
       const consultationCategory = categories.find((item) => item.slug === "consultations");
-      const consultationService = catalogServices.find((item) => item.category_id === consultationCategory?.id && item.slug !== "follow-up-check-up");
+      const consultationService = catalogServices.find((item) => item.category_id === consultationCategory?.id && !["follow-up-check-up", ONLINE_CONSULTATION_SLUG].includes(item.slug));
       setSelectedCategory(consultationCategory?.id || null);
       setSelectedService(consultationService?.id || null);
     } else {
@@ -681,7 +694,7 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
 
   return (
     <div className={embedded ? "bk-embedded" : isModal ? "bk-modal-inner" : "bk-standalone"}>
-      {policyModal && <BookingPolicyModal type={policyModal} onClose={() => setPolicyModal(null)} />}
+      {policyModal && <BookingPolicyModal type={policyModal} online={isOnlineConsultation} onClose={() => setPolicyModal(null)} />}
       {authPromptOpen && (
         <div className="bk-account-overlay" role="dialog" aria-modal="true" aria-labelledby="booking-account-title" onClick={(event) => event.target === event.currentTarget && setAuthPromptOpen(false)}>
           <section className="bk-account-card">
@@ -775,7 +788,7 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
             <div className="bk-panel-head">
               <span className="bk-panel-icon"><i className="fa-solid fa-kit-medical" /></span>
               <div>
-                <h2 className="bk-panel-title">Choose Your Treatment</h2>
+                <h2 className="bk-panel-title">Choose your visit</h2>
                 <p className="bk-panel-sub">Select the service you&apos;d like to book with Dr. Kharyl</p>
               </div>
             </div>
@@ -783,7 +796,7 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
             <div className={`bk-service-catalog ${bookingType === "consultation" ? "is-consultation" : ""}`}>
               <div className="bk-booking-mode">
                 <button type="button" disabled={!categories.length || !catalogServices.length} className={bookingType === "consultation" ? "selected" : ""} onClick={() => chooseBookingType("consultation")}>
-                  <span><i className="fa-solid fa-user-doctor" /></span><div><small>Assessment only</small><strong>Consultation</strong><p>Meet Dr. Kharyl for evaluation and a personalized treatment plan.</p></div><i className="fa-solid fa-chevron-right" />
+                  <span><i className="fa-solid fa-user-doctor" /></span><div><small>Clinic or online</small><strong>Consultation</strong><p>Meet Dr. Kharyl for an assessment and a personalized care plan.</p></div><i className="fa-solid fa-chevron-right" />
                 </button>
                 <button type="button" disabled={!categories.length || !catalogServices.length} className={bookingType === "treatment" && catalogView === "treatments" ? "selected" : ""} onClick={chooseTreatmentCatalog}>
                   <span><i className="fa-solid fa-syringe" /></span><div><small>Book procedures</small><strong>Medical Treatment</strong><p>Select one or more treatments and add them to your appointment cart.</p></div><i className="fa-solid fa-chevron-right" />
@@ -837,15 +850,16 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
                   })}
                 </div>
               </section>}
+              {bookingType === "consultation" && !isConsultationFollowUp && <section className="online-booking-options" aria-label="Consultation location"><div><p className="bk-label">How would you like to consult?</p><p>Both options follow the same clinic hours and doctor availability.</p></div><div className="online-mode-options">{(["clinic", "online"] as const).map(mode => { const option = catalogServices.find(item => item.category_id === categories.find(category => category.slug === "consultations")?.id && (mode === "online" ? item.slug === ONLINE_CONSULTATION_SLUG : ![ONLINE_CONSULTATION_SLUG, "follow-up-check-up"].includes(item.slug))); return <button type="button" key={mode} disabled={!option} className={(isOnlineConsultation ? "online" : "clinic") === mode ? "selected" : ""} aria-pressed={(isOnlineConsultation ? "online" : "clinic") === mode} onClick={() => { setSelectedService(option?.id || null); setSelectedCategory(option?.category_id || null); }}><i className={`fa-solid ${mode === "online" ? "fa-video" : "fa-hospital"}`} /><strong>{mode === "online" ? "Online consultation" : "In-clinic consultation"}</strong><span>{mode === "online" ? "₱600 · Full consultation fee" : `₱${Number(option?.price || 0).toLocaleString()} · Clinic visit`}</span><small>{mode === "online" ? "Zoom inside your patient portal · Digital prescription when needed" : "Visit The Klinique for your assessment"}</small></button>; })}</div></section>}
               {service && bookingType === "consultation" && (
                 <div className="bk-selected-service bk-selected-service-summary">
-                  <div><small className="bk-primary-label"><i className="fa-solid fa-star" /> Primary treatment</small><strong>{service.name}</strong>{service.description && <p>{service.description}</p>}</div>
-                  <span>PHP {Number(service.price).toLocaleString()}{service.price_note && <small>{service.price_note}</small>}</span>
+                  <div><small className="bk-primary-label"><i className={`fa-solid ${isOnlineConsultation ? "fa-video" : "fa-stethoscope"}`} /> {isOnlineConsultation ? "Online consultation" : "Clinic consultation"}</small><strong>{service.name}</strong>{service.description && <p>{service.description}</p>}</div>
+                  <span>PHP {(isOnlineConsultation ? ONLINE_CONSULTATION_FEE : Number(service.price)).toLocaleString()}{service.price_note && <small>{service.price_note}</small>}</span>
                 </div>
               )}
               {catalogError && <p className="bk-form-error">{catalogError}</p>}
               {service && (isConsultationOnly ? (
-                <div className="bk-consult-only"><i className="fa-solid fa-stethoscope" /><div><strong>Consultation-only appointment</strong><p>No cart or add-ons. This visit is reserved exclusively for assessment and treatment planning.</p><button type="button" onClick={() => setStep(1)}>Continue with consultation <i className="fa-solid fa-arrow-right" /></button></div></div>
+                <div className="bk-consult-only"><i className={`fa-solid ${isOnlineConsultation ? "fa-video" : "fa-stethoscope"}`} /><div><strong>{isOnlineConsultation ? "Your consultation, from home" : "Consultation appointment"}</strong><p>{isOnlineConsultation ? "Pay the full ₱600 fee via QR Ph. Join your scheduled video visit from Online Consultation in your patient portal." : "This visit is reserved for assessment and treatment planning."}</p><button type="button" onClick={() => setStep(1)}>Continue with consultation <i className="fa-solid fa-arrow-right" /></button></div></div>
               ) : null)}
               {bookingType === "treatment" && <aside className="bk-cart-panel" aria-label="Appointment cart">
                 <div className="bk-cart-panel-head">
@@ -1173,7 +1187,7 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
 
             <div className="bk-review-card">
               <div className="bk-review-overview">
-                <div><span className="bk-review-status"><i className="fa-solid fa-qrcode" /> Ready for payment</span><h3>Your appointment summary</h3><p>{isConsultationFollowUp ? "Review the schedule before paying the full follow-up check-up fee." : "Review each section before paying the reservation fee that confirms your slot."}</p></div>
+                <div><span className="bk-review-status"><i className="fa-solid fa-qrcode" /> Ready for payment</span><h3>Your appointment summary</h3><p>{isOnlineConsultation ? "Review your online visit before paying the full ₱600 consultation fee." : isConsultationFollowUp ? "Review the schedule before paying the full follow-up check-up fee." : "Review each section before paying the reservation fee that confirms your slot."}</p></div>
                 <div className="bk-review-slot"><span>{selectedDate}</span><strong>{selectedTime}</strong></div>
               </div>
               {/* Service highlight */}
@@ -1217,7 +1231,7 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
                     <div><dt>Date</dt><dd>{selectedDate}</dd></div>
                     <div><dt>Time</dt><dd>{selectedTime}</dd></div>
                     <div><dt>Doctor</dt><dd>Dr. Kharyl</dd></div>
-                    <div><dt>Clinic</dt><dd>The Klinique · Cagayan de Oro</dd></div>
+                    <div><dt>{isOnlineConsultation ? "Location" : "Clinic"}</dt><dd>{isOnlineConsultation ? "Online · Join from your patient portal" : "The Klinique · Cagayan de Oro"}</dd></div>
                   </dl>
                 </section>
                 <section className="bk-review-section">
@@ -1241,21 +1255,21 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
               <div className="bk-review-notice">
                 <i className="fa-solid fa-circle-info" />
                 <span>
-                  Your slot will be held for <strong>15 minutes while awaiting payment</strong>. It becomes confirmed automatically after PayMongo reports a successful QR Ph payment. If payment is not completed in time, the slot is released.
+                  Your slot will be held for <strong>30 minutes while awaiting payment</strong>. It becomes confirmed automatically after PayMongo reports a successful QR Ph payment. If payment is not completed in time, the slot is released.
                 </span>
               </div>
               <div className="bk-review-total">
-                <div><span>Estimated treatment total</span><small>Final amount may change after the doctor’s assessment.</small></div>
+                <div><span>{isOnlineConsultation ? "Online consultation total" : "Estimated visit total"}</span><small>{isOnlineConsultation ? "Full consultation fee. No additional reservation fee." : "Final amount may change after the doctor’s assessment."}</small></div>
                 <strong>PHP {grandTotal.toLocaleString()}</strong>
               </div>
               <div className="bk-reservation-card">
                 <div className="bk-reservation-icon"><i className="fa-solid fa-qrcode" /></div>
                 <div>
                   <p className="bk-reservation-eyebrow">Required to confirm</p>
-                  <h3>{isConsultationFollowUp ? "PHP 500 full follow-up fee" : `${RESERVATION_FEE_LABEL} reservation fee`}</h3>
-                  <p>{isConsultationFollowUp ? "Securely pay the complete follow-up check-up fee via QR Ph with PayMongo." : "Securely pay via QR Ph with PayMongo. This amount is credited toward your clinic bill when you visit."}</p>
+                  <h3>{isOnlineConsultation ? "PHP 600 full online consultation fee" : isConsultationFollowUp ? "PHP 500 full follow-up fee" : `${RESERVATION_FEE_LABEL} reservation fee`}</h3>
+                  <p>{isOnlineConsultation ? "Pay the complete online consultation fee via QR Ph with PayMongo. Your meeting will be available in the patient portal." : isConsultationFollowUp ? "Securely pay the complete follow-up check-up fee via QR Ph with PayMongo." : "Securely pay via QR Ph with PayMongo. This amount is credited toward your clinic bill when you visit."}</p>
                 </div>
-                <strong>{RESERVATION_FEE_LABEL}</strong>
+                <strong>{paymentLabel}</strong>
               </div>
             </div>
 

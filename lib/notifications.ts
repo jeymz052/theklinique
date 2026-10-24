@@ -1,6 +1,6 @@
 import { supabase } from "@/lib/supabase";
 
-export type AppNotification = { id: string; title: string; body: string; href: string; read_at: string | null; created_at: string };
+export type AppNotification = { id: string; event?: string; title: string; body: string; href: string; read_at: string | null; created_at: string };
 
 async function headers(): Promise<Record<string, string>> {
   const { data } = await supabase.auth.getSession();
@@ -8,7 +8,7 @@ async function headers(): Promise<Record<string, string>> {
 }
 
 export async function fetchNotifications() {
-  const response = await fetch("/api/notifications", { headers: await headers() });
+  const response = await fetch("/api/notifications", { cache: "no-store", headers: await headers() });
   const result = await response.json();
   if (!response.ok) throw new Error(result.error || "Unable to load notifications.");
   return result.notifications as AppNotification[];

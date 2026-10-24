@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import { notifyConsultationFollowUpRecommended } from "@/lib/bookingNotifications";
+import { validatePrescription } from "@/lib/consultation";
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -21,7 +22,7 @@ export async function GET(request: Request) {
   if (!await doctor(request)) return NextResponse.json({ error: "Doctor access is required." }, { status: 403 });
   const database = admin();
   const [charts, intakes, procedures, procedureCategories, packages] = await Promise.all([
-    database.from("consultation_charts").select("appointment_id, clinical_assessment, subjective_notes, objective_notes, treatment_plan, follow_up_required, follow_up_recommended_date, follow_up_notes, follow_up_appointment_id, status, started_at, completed_at"),
+    database.from("consultation_charts").select("appointment_id, clinical_assessment, subjective_notes, objective_notes, treatment_plan, follow_up_required, follow_up_recommended_date, follow_up_notes, follow_up_appointment_id, prescription_draft, no_prescription_required, status, started_at, completed_at"),
     database.from("appointment_intakes").select("appointment_id, chief_concern, treatment_goals, allergies_snapshot, medications_snapshot, medical_history_snapshot, pregnancy_status, previous_reactions, recent_procedures, custom_answers, information_confirmed_at"),
     database.from("services").select("id, category_id, subcategory, name, description, price, price_note, duration_mins, service_categories!inner(slug)").eq("is_active", true).neq("service_categories.slug", "consultations").order("sort_order"),
     database.from("service_categories").select("id, name, slug, sort_order").not("slug", "in", "(consultations,package-bookings)").order("sort_order"),
@@ -43,7 +44,7 @@ export async function PATCH(request: Request) {
       ? String(body.followUpRecommendedDate)
       : null;
     const db = admin();
-    const { data: appointment, error: appointmentError } = await db.from("appointments").select("id, client_id, status, appointment_date, appointment_time, services!inner(service_categories!inner(slug))").eq("id", appointmentId).single();
+    const { data: appointment, error: appointmentError } = await db.from("appointments").select("id, client_id, status, consultation_mode, appointment_date, appointment_time, services!inner(service_categories!inner(slug))").eq("id", appointmentId).single();
     if (appointmentError || !appointment) return NextResponse.json({ error: "Appointment not found." }, { status: 404 });
     const appointmentService = Array.isArray(appointment.services) ? appointment.services[0] : appointment.services;
     const category = Array.isArray(appointmentService?.service_categories) ? appointmentService.service_categories[0] : appointmentService?.service_categories;
@@ -53,11 +54,16 @@ export async function PATCH(request: Request) {
     if (existingChart?.follow_up_appointment_id && !followUpRequired) {
       return NextResponse.json({ error: "This recommendation already has a booked follow-up and cannot be removed." }, { status: 409 });
     }
-    const now = new Date().toISOString();
-    const { data, error } = await db.from("consultation_charts").upsert({
-      appointment_id: appointmentId,
-      client_id: appointment.client_id,
-      doctor_id: user.id,
+    if (appointment.consultation_mode === "online" && (body.procedureServiceIds?.length || body.packageProductIds?.length)) return NextResponse.json({ error: "In-clinic procedures must be booked separately after an online consultation." }, { status: 400 });
+    let prescriptionDraft = null;
+    if (appointment.consultation_mode === "online" && body.prescriptionDraft) {
+      try { prescriptionDraft = validatePrescription(body.prescriptionDraft); }
+      catch (validationError) { return NextResponse.json({ error: (validationError as Error).message }, { status: 400 }); }
+    }
+    const noPrescriptionRequired = appointment.consultation_mode === "online" && body.noPrescriptionRequired === true;
+    if (noPrescriptionRequired && prescriptionDraft?.medicines.length) return NextResponse.json({ error: "Remove the medicines before selecting no prescription required." }, { status: 400 });
+    if (status === "completed" && (!String(body.clinicalAssessment || "").trim() || !String(body.treatmentPlan || "").trim())) return NextResponse.json({ error: "Clinical assessment and treatment plan are required before finalizing." }, { status: 400 });
+    const { data, error } = await db.rpc("save_consultation_chart", { p_appointment_id: appointmentId, p_doctor_id: user.id, p_status: status, p_chart: {
       clinical_assessment: String(body.clinicalAssessment || "").trim() || null,
       subjective_notes: String(body.subjectiveNotes || "").trim() || null,
       objective_notes: String(body.objectiveNotes || "").trim() || null,
@@ -65,15 +71,12 @@ export async function PATCH(request: Request) {
       follow_up_required: followUpRequired,
       follow_up_recommended_date: followUpRecommendedDate,
       follow_up_notes: followUpRequired ? String(body.followUpNotes || "").trim() || null : null,
-      status,
-      started_at: status !== "ready" ? now : null,
-      completed_at: status === "completed" ? now : null,
-      updated_at: now,
-    }, { onConflict: "appointment_id" }).select().single();
+      prescription_draft: prescriptionDraft,
+      no_prescription_required: noPrescriptionRequired,
+    } }).single();
+    if (error?.code === "P0001") return NextResponse.json({ error: error.message }, { status: 409 });
     if (error) throw error;
-    if (status === "completed") {
-      const completion = await db.from("appointments").update({ status: "completed", completed_at: now }).eq("id", appointmentId).eq("status", "confirmed");
-      if (completion.error) throw completion.error;
+    if (status === "completed" && appointment.status !== "completed") {
       if (followUpRequired) {
         try {
           await notifyConsultationFollowUpRecommended(db, appointmentId, followUpRecommendedDate, String(body.followUpNotes || "").trim());

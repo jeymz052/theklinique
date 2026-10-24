@@ -1,52 +1,34 @@
-import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
-
-const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-const service = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-function db() {
-  if (!url || !service) throw new Error("Supabase is not configured.");
-  return createClient(url, service, { auth: { persistSession: false } });
-}
-
-async function clinician(request: Request) {
-  const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-  if (!token || !url || !anon) return null;
-  const auth = createClient(url, anon, { auth: { persistSession: false }, global: { headers: { Authorization: `Bearer ${token}` } } });
-  const { data } = await auth.auth.getUser();
-  if (!data.user) return null;
-  if (["doctor", "superadmin"].includes(String(data.user.app_metadata?.role || ""))) return data.user;
-  const { data: profile } = await db().from("profiles").select("role").eq("id", data.user.id).maybeSingle();
-  return ["doctor", "superadmin"].includes(String(profile?.role)) ? data.user : null;
-}
+import { clinicalDatabase, clinicalUser } from "@/lib/clinicalServer";
+import { validateTreatmentStep, type TreatmentForm, type TreatmentProtocol } from "@/lib/treatment";
+import { validClinicalDate } from "@/lib/patientProgress";
 
 function first<T>(value: T | T[] | null | undefined) { return Array.isArray(value) ? value[0] : value; }
-type CategoryRel = { slug: string };
-type ServiceRel = { name: string; service_categories: CategoryRel | CategoryRel[] | null };
-type ClientRel = { full_name: string; email: string | null; phone: string };
-type AppointmentRow = { id: string; reference_no: string; appointment_date: string; appointment_time: string; status: string; service_id: string; clients: ClientRel | ClientRel[] | null; services: ServiceRel | ServiceRel[] | null; products: { name: string } | { name: string }[] | null; treatment_cases: Record<string, unknown>[] | null };
+const privateHeaders = { "Cache-Control": "private, no-store" };
+type AppointmentRow = { id: string; client_id: string; reference_no: string; appointment_date: string; appointment_time: string; status: string; service_id: string; clients: { full_name: string; email: string; phone: string } | null; services: { name: string; service_categories: { slug: string } | null } | null; products: { name: string } | null; treatment_cases: Record<string, unknown>[]; appointment_intakes: Record<string, unknown>[] };
 
 export async function GET(request: Request) {
-  if (!await clinician(request)) return NextResponse.json({ error: "Doctor access is required." }, { status: 403 });
   try {
-    const database = db();
+    const auth = await clinicalUser(request);
+    if (!auth) return NextResponse.json({ error: "Sign in is required." }, { status: 401 });
+    if (!auth.isDoctor) return NextResponse.json({ error: "Doctor access is required." }, { status: 403 });
+    const database = clinicalDatabase();
     const [appointments, protocols] = await Promise.all([
-      database.from("appointments").select("id, reference_no, appointment_date, appointment_time, status, service_id, clients(full_name, email, phone), services(name, service_categories(slug)), products(name), treatment_cases(*)").in("status", ["confirmed", "completed"]).order("appointment_date"),
+      database.from("appointments").select("id, client_id, reference_no, appointment_date, appointment_time, status, service_id, clients(full_name, email, phone), services(name, service_categories(slug)), products(name), treatment_cases(*), appointment_intakes(*)").in("status", ["confirmed", "completed"]).order("appointment_date"),
       database.from("treatment_protocols").select("*").eq("is_active", true),
     ]);
     if (appointments.error || protocols.error) throw appointments.error || protocols.error;
     const cases = ((appointments.data || []) as unknown as AppointmentRow[])
-      .filter((item) => first(first(item.services)?.service_categories)?.slug !== "consultations")
-      .map((item) => ({
-        appointmentId: item.id, referenceNo: item.reference_no, date: item.appointment_date,
+      .filter(item => first(first(item.services)?.service_categories)?.slug !== "consultations")
+      .map(item => ({
+        appointmentId: item.id, clientId: item.client_id, referenceNo: item.reference_no, date: item.appointment_date,
         time: item.appointment_time.slice(0, 5), appointmentStatus: item.status,
         patient: first(item.clients)?.full_name || "Unknown patient", email: first(item.clients)?.email || "",
         phone: first(item.clients)?.phone || "", service: first(item.products)?.name || first(item.services)?.name || "Treatment",
-        serviceId: item.service_id, case: item.treatment_cases?.[0] || null,
-        protocol: (protocols.data || []).find((protocol) => protocol.service_id === item.service_id) || null,
+        serviceId: item.service_id, case: first(item.treatment_cases) || null, intake: first(item.appointment_intakes),
+        protocol: (protocols.data || []).find(protocol => protocol.service_id === item.service_id) || null,
       }));
-    return NextResponse.json({ cases });
+    return NextResponse.json({ cases }, { headers: privateHeaders });
   } catch (error) {
     console.error("Unable to load treatment cases:", error);
     return NextResponse.json({ error: "Unable to load treatment cases." }, { status: 500 });
@@ -54,58 +36,54 @@ export async function GET(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  const user = await clinician(request);
-  if (!user) return NextResponse.json({ error: "Doctor access is required." }, { status: 403 });
   try {
+    const auth = await clinicalUser(request);
+    if (!auth) return NextResponse.json({ error: "Sign in is required." }, { status: 401 });
+    if (!auth.isDoctor) return NextResponse.json({ error: "Doctor access is required." }, { status: 403 });
     const body = await request.json();
     const appointmentId = String(body.appointmentId || "");
-    const database = db();
-    const { data: appointment, error: appointmentError } = await database
-      .from("appointments")
-      .select("id, client_id, service_id, status, services!inner(service_categories!inner(slug))")
-      .eq("id", appointmentId)
-      .single();
+    const step = Number(body.currentStep);
+    if (!Number.isInteger(step) || step < 1 || step > 5 || !["in_progress", "completed"].includes(body.status)) return NextResponse.json({ error: "Choose a valid treatment step and status." }, { status: 400 });
+    const database = clinicalDatabase();
+    const { data: appointment, error: appointmentError } = await database.from("appointments")
+      .select("id,client_id,service_id,status,services!inner(service_categories!inner(slug))").eq("id", appointmentId).single();
     if (appointmentError || !appointment) return NextResponse.json({ error: "Treatment appointment not found." }, { status: 404 });
-    const appointmentService = first(appointment.services);
-    if (first(appointmentService?.service_categories)?.slug === "consultations") {
-      return NextResponse.json({ error: "Consultations must be charted in the consultation workspace." }, { status: 409 });
-    }
-    if (!["confirmed", "completed"].includes(appointment.status)) return NextResponse.json({ error: "Only confirmed treatment appointments can be opened." }, { status: 409 });
-
-    const step = Math.max(1, Math.min(4, Number(body.currentStep) || 1));
-    const complete = body.status === "completed";
-    const now = new Date().toISOString();
-    if (step >= 3 && body.consentGiven !== true) return NextResponse.json({ error: "Patient consent is required before treatment." }, { status: 400 });
-    if (complete && body.postcareGiven !== true) return NextResponse.json({ error: "Confirm that post-care instructions were provided." }, { status: 400 });
-
-    const record = {
-      appointment_id: appointmentId, client_id: appointment.client_id, service_id: appointment.service_id,
-      doctor_id: user.id, status: complete ? "completed" : "in_progress", current_step: complete ? 4 : step,
-      consultation_notes: null, consent_given: body.consentGiven === true,
-      consent_signature_name: String(body.consentSignatureName || "").trim() || null,
-      consent_version: String(body.consentVersion || "") || null,
-      consent_text_snapshot: String(body.consentTextSnapshot || "") || null,
-      consented_at: body.consentGiven ? now : null, consent_witnessed_by: body.consentGiven ? user.id : null,
-      anesthesia_type: body.anesthesiaType || null, anesthesia_product: String(body.anesthesiaProduct || "").trim() || null,
-      anesthesia_amount: String(body.anesthesiaAmount || "").trim() || null,
-      anesthesia_applied_at: body.anesthesiaType && body.anesthesiaType !== "none" ? now : null,
-      anesthesia_notes: String(body.anesthesiaNotes || "").trim() || null,
-      procedure_details: body.procedureDetails || {}, procedure_notes: String(body.procedureNotes || "").trim() || null,
-      procedure_started_at: step >= 3 ? now : null, procedure_completed_at: step >= 4 || complete ? now : null,
-      postcare_instructions: String(body.postcareInstructions || "").trim() || null,
-      postcare_given: body.postcareGiven === true, postcare_given_at: body.postcareGiven ? now : null,
-      follow_up_required: false, follow_up_date: null, follow_up_time: null, follow_up_notes: null,
-      completed_at: complete ? now : null, updated_at: now,
+    if (first(first(appointment.services)?.service_categories)?.slug === "consultations") return NextResponse.json({ error: "Consultations must be charted in the consultation workspace." }, { status: 409 });
+    if (appointment.status !== "confirmed") return NextResponse.json({ error: "Only confirmed treatments can be edited. Completed treatments are available for review." }, { status: 409 });
+    const protocolResult = await database.from("treatment_protocols").select("*").eq("service_id", appointment.service_id).eq("is_active", true).maybeSingle();
+    if (protocolResult.error) throw protocolResult.error;
+    const protocol = protocolResult.data as TreatmentProtocol | null;
+    const string = (value: unknown) => typeof value === "string" ? value.trim() : "";
+    const details = body.procedureDetails;
+    if (!details || typeof details !== "object" || Array.isArray(details) || Object.keys(details).length > 50 || Object.values(details).some(value => typeof value !== "string" || value.length > 2000)) return NextResponse.json({ error: "Provide valid procedure details." }, { status: 400 });
+    const form: TreatmentForm = {
+      consentGiven: body.consentGiven === true, consentSignatureName: string(body.consentSignatureName),
+      anesthesiaType: string(body.anesthesiaType) || "none", anesthesiaProduct: string(body.anesthesiaProduct), anesthesiaAmount: string(body.anesthesiaAmount), anesthesiaNotes: string(body.anesthesiaNotes),
+      procedureDetails: details, procedureNotes: string(body.procedureNotes), procedureDate: string(body.procedureDate),
+      postcareInstructions: string(body.postcareInstructions), postcareGiven: body.postcareGiven === true,
+      followUpRequired: body.followUpRequired === true, followUpDate: string(body.followUpDate), followUpNotes: string(body.followUpNotes),
     };
-    const saved = await database.from("treatment_cases").upsert(record, { onConflict: "appointment_id" }).select().single();
-    if (saved.error) throw saved.error;
-    if (complete) {
-      const result = await database.from("appointments").update({ status: "completed", completed_at: now }).eq("id", appointmentId).eq("status", "confirmed");
-      if (result.error) throw result.error;
+    if (form.consentSignatureName.length > 250 || form.anesthesiaProduct.length > 1000 || form.anesthesiaAmount.length > 1000 || [form.anesthesiaNotes, form.procedureNotes, form.postcareInstructions].some(value => value.length > 10000) || form.followUpNotes.length > 2000) return NextResponse.json({ error: "Keep clinical notes within the supported field lengths." }, { status: 400 });
+    if (form.procedureDate && !validClinicalDate(form.procedureDate)) return NextResponse.json({ error: "Choose a valid procedure date." }, { status: 400 });
+    const complete = body.status === "completed";
+    const validation = validateTreatmentStep(form, protocol, step, complete);
+    if (validation) return NextResponse.json({ error: validation }, { status: 400 });
+    const record = {
+      current_step: complete ? 5 : step, consent_given: form.consentGiven, consent_signature_name: form.consentSignatureName || null,
+      consent_version: protocol?.consent_version || "1.0", consent_text_snapshot: protocol?.consent_text || "The procedure, benefits, alternatives, material risks, and aftercare have been explained. The patient had an opportunity to ask questions and voluntarily consents to treatment.",
+      anesthesia_type: form.anesthesiaType, anesthesia_product: form.anesthesiaProduct || null, anesthesia_amount: form.anesthesiaAmount || null, anesthesia_notes: form.anesthesiaNotes || null,
+      procedure_details: form.procedureDetails, procedure_notes: form.procedureNotes || null, performed_on: form.procedureDate || null,
+      postcare_instructions: form.postcareInstructions || null, postcare_given: form.postcareGiven,
+      follow_up_required: form.followUpRequired, follow_up_date: form.followUpRequired ? form.followUpDate : null, follow_up_notes: form.followUpRequired ? form.followUpNotes : null,
+    };
+    const saved = await database.rpc("save_treatment_chart", { p_appointment_id: appointmentId, p_doctor_id: auth.user.id, p_record: record, p_complete: complete }).single();
+    if (saved.error) {
+      if (saved.error.code === "P0001") return NextResponse.json({ error: saved.error.message }, { status: 409 });
+      throw saved.error;
     }
-    return NextResponse.json({ case: saved.data });
+    return NextResponse.json({ case: saved.data }, { headers: privateHeaders });
   } catch (error) {
     console.error("Unable to save treatment workflow:", error);
-    return NextResponse.json({ error: "Unable to save the treatment workflow." }, { status: 500 });
+    return NextResponse.json({ error: "Unable to save the treatment workflow. Check that the patient progress migration is applied." }, { status: 500 });
   }
 }

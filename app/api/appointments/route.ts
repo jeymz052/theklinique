@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { RESERVATION_FEE_PHP } from "@/lib/reservation";
 import { clinicNow, hourlyTimes, isIsoDate, normalizeTime } from "@/lib/bookingAvailability";
 import { notifyAppointmentStatusChanged, notifyBookingCreated } from "@/lib/bookingNotifications";
+import { bookingPayment, ONLINE_CONSULTATION_FEE, ONLINE_CONSULTATION_SLUG } from "@/lib/consultation";
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -21,6 +22,7 @@ type AppointmentRecord = {
   total_amount: number | string;
   notes: string | null;
   visit_kind: "standard" | "consultation_follow_up";
+  consultation_mode: "clinic" | "online";
   parent_appointment_id: string | null;
   payment_expires_at: string | null;
   cancellation_reason: string | null;
@@ -85,6 +87,7 @@ function toAppointment(record: AppointmentRecord) {
     phone: client?.phone || "",
     service: service?.name || "Consultation",
     serviceCategory: serviceCategory?.slug || "",
+    consultationMode: record.consultation_mode || "clinic",
     visitKind: record.visit_kind || "standard",
     parentAppointmentId: record.parent_appointment_id || null,
     paymentExpiresAt: record.payment_expires_at || null,
@@ -110,7 +113,7 @@ export async function GET(request: Request) {
     if (releaseError) throw releaseError;
     let query = admin
       .from("appointments")
-      .select("id, reference_no, appointment_date, appointment_time, status, total_amount, notes, visit_kind, parent_appointment_id, payment_expires_at, cancellation_reason, reservation_fee_waived_at, reservation_fee_waiver_reason, clients(id, full_name, email, phone), services(name, service_categories(slug)), payments(status, amount, paid_at)")
+      .select("id, reference_no, appointment_date, appointment_time, status, total_amount, notes, visit_kind, consultation_mode, parent_appointment_id, payment_expires_at, cancellation_reason, reservation_fee_waived_at, reservation_fee_waiver_reason, clients(id, full_name, email, phone), services(name, service_categories(slug)), payments(status, amount, paid_at)")
       .order("appointment_date", { ascending: true })
       .order("appointment_time", { ascending: true });
 
@@ -231,6 +234,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Allergies, medications, and relevant medical conditions are required for treatment bookings. Enter None when applicable." }, { status: 400 });
     }
     const isFollowUp = serviceSlug === "follow-up-check-up";
+    const consultationMode = serviceSlug === ONLINE_CONSULTATION_SLUG ? "online" : "clinic";
+    const paymentTerms = bookingPayment(consultationMode, isFollowUp);
     if (isFollowUp !== Boolean(parentAppointmentId)) {
       return NextResponse.json({ error: isFollowUp ? "Open the follow-up link from your consultation notification." : "The linked follow-up appointment is invalid." }, { status: 400 });
     }
@@ -269,7 +274,7 @@ export async function POST(request: Request) {
     if ((selectedProducts || []).length !== new Set(productIds).size) return NextResponse.json({ error: "One or more selected packages are unavailable." }, { status: 400 });
     const packageOnly = serviceSlug === "glow-plans-package-booking";
     if (packageOnly && !selectedProducts?.length) return NextResponse.json({ error: "Choose at least one Glow Plan package." }, { status: 400 });
-    const treatmentTotal = Number(service.price) + additionalTreatments.reduce((sum, item) => sum + Number(item.price), 0);
+    const treatmentTotal = (consultationMode === "online" ? ONLINE_CONSULTATION_FEE : Number(service.price)) + additionalTreatments.reduce((sum, item) => sum + Number(item.price), 0);
     const packageTotal = (selectedProducts || []).reduce((sum, product) => sum + Number(product.price), 0);
 
     const clientResult = staffBooking && existingClient ? { data: existingClient, error: null } : await admin
@@ -311,6 +316,7 @@ export async function POST(request: Request) {
         payment_expires_at: staffBooking ? null : new Date(Date.now() + PAYMENT_HOLD_MINUTES * 60_000).toISOString(),
         notes: notes || null,
         visit_kind: isFollowUp ? "consultation_follow_up" : "standard",
+        consultation_mode: consultationMode,
         parent_appointment_id: parentAppointmentId,
         previsit_consent_acknowledged_at: staffBooking ? null : new Date().toISOString(),
       })
@@ -355,13 +361,11 @@ export async function POST(request: Request) {
     if (!staffBooking) {
       const { error: reservationError } = await admin.from("payments").insert({
         appointment_id: appointment.id,
-        amount: RESERVATION_FEE_PHP,
+        amount: paymentTerms.amount,
         currency: "PHP",
         method: "paymongo_qr_ph",
         status: "awaiting_payment",
-        metadata: isFollowUp
-          ? { kind: "consultation_follow_up_fee", credited_to_visit: false, full_fee: true }
-          : { kind: "reservation_fee", credited_to_visit: true },
+        metadata: paymentTerms,
       });
       if (reservationError) {
         await admin.from("appointments").update({ status: "cancelled" }).eq("id", appointment.id).eq("status", "pending");
@@ -396,7 +400,7 @@ export async function POST(request: Request) {
       console.error("Unable to send booking notifications:", notificationError);
     }
 
-    return NextResponse.json({ appointment, requiresPayment: !staffBooking, reservationFee: staffBooking ? 0 : RESERVATION_FEE_PHP, paymentHoldMinutes: staffBooking ? 0 : PAYMENT_HOLD_MINUTES });
+    return NextResponse.json({ appointment, requiresPayment: !staffBooking, reservationFee: staffBooking ? 0 : paymentTerms.amount, paymentHoldMinutes: staffBooking ? 0 : PAYMENT_HOLD_MINUTES });
   } catch (error) {
     console.error("Unable to create appointment:", error);
     return NextResponse.json({ error: "Unable to save the booking. Please try again." }, { status: 500 });
@@ -413,7 +417,7 @@ export async function PATCH(request: Request) {
       const admin = getAdminClient();
       const role = await getUserRole(user);
       if (!isStaffRole(role)) return NextResponse.json({ error: "Clinic staff access is required." }, { status: 403 });
-      const { data: current, error: currentError } = await admin.from("appointments").select("id,status,appointment_date,appointment_time,cancellation_reason,payment_expires_at").eq("id", id).single();
+      const { data: current, error: currentError } = await admin.from("appointments").select("id,status,appointment_date,appointment_time,cancellation_reason,payment_expires_at,consultation_mode,visit_kind").eq("id", id).single();
       if (currentError || !current) return NextResponse.json({ error: "Appointment not found." }, { status: 404 });
       const now = clinicNow();
       if (current.appointment_date < now.date || (current.appointment_date === now.date && normalizeTime(current.appointment_time) <= now.time)) return NextResponse.json({ error: "Past appointment times cannot be updated." }, { status: 409 });
@@ -448,7 +452,8 @@ export async function PATCH(request: Request) {
       const changedAt = new Date().toISOString();
       const { error } = await admin.from("appointments").update({ status: "confirmed", payment_expires_at: null, cancelled_at: null, cancellation_reason: null, reservation_fee_waived_at: changedAt, reservation_fee_waived_by: user.id, reservation_fee_waiver_reason: waiverReason, updated_at: changedAt }).eq("id", id);
       if (error) throw error;
-      const { error: paymentError } = await admin.from("payments").update({ status: "waived", metadata: { kind: "reservation_fee", waived: true, waived_by: user.id, waiver_reason: waiverReason } }).eq("appointment_id", id).in("status", ["pending", "awaiting_payment", "failed"]);
+      const terms = bookingPayment(current.consultation_mode === "online" ? "online" : "clinic", current.visit_kind === "consultation_follow_up");
+      const { error: paymentError } = await admin.from("payments").update({ status: "waived", metadata: { ...terms, waived: true, waived_by: user.id, waiver_reason: waiverReason } }).eq("appointment_id", id).in("status", ["pending", "awaiting_payment", "failed"]);
       if (paymentError) throw paymentError;
       try { await notifyAppointmentStatusChanged(admin, id, "confirmed"); } catch (notificationError) { console.error("Unable to send appointment confirmation:", notificationError); }
       return NextResponse.json({ ok: true });

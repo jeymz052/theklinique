@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual } from "crypto";
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import { notifyReservationPaid } from "@/lib/bookingNotifications";
+import { bookingPayment } from "@/lib/consultation";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -48,27 +49,21 @@ export async function POST(request: Request) {
     if (typeof checkoutId !== "string" || !supabaseUrl || !serviceRoleKey) return NextResponse.json({ ok: true });
 
     const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } });
-    const paymentUpdate = await admin
-      .from("payments")
-      .update({ status: "paid", paid_at: new Date().toISOString(), metadata: { kind: "reservation_fee", checkout_session: checkout, credited_to_visit: true } })
-      .eq("paymongo_payment_id", checkoutId)
-      .in("status", ["awaiting_payment", "waived"])
-      .select("appointment_id");
-    let payments = paymentUpdate.data;
+    const reference = checkout?.attributes?.reference_number;
+    if (typeof reference !== "string") return NextResponse.json({ error: "Missing appointment reference." }, { status: 400 });
+    const lookup = await admin.from("appointments").select("id, consultation_mode, visit_kind").eq("reference_no", reference).maybeSingle();
+    if (lookup.error) throw lookup.error;
+    if (!lookup.data) return NextResponse.json({ ok: true });
+    const terms = bookingPayment(lookup.data.consultation_mode === "online" ? "online" : "clinic", lookup.data.visit_kind === "consultation_follow_up");
+    const paidPayment = checkout.attributes.payments?.find((item: { attributes?: { status?: string } }) => item.attributes?.status === "paid");
+    const paidAttributes = paidPayment?.attributes || checkout.attributes.payment_intent?.attributes;
+    if (paidAttributes?.amount !== terms.amount * 100 || paidAttributes?.currency !== "PHP") return NextResponse.json({ error: "Payment amount does not match the appointment fee." }, { status: 400 });
+    const paymentUpdate = await admin.from("payments")
+      .update({ status: "paid", paid_at: new Date().toISOString(), paymongo_payment_id: checkoutId, metadata: { ...terms, checkout_session: checkout } })
+      .eq("appointment_id", lookup.data.id).eq("amount", terms.amount)
+      .in("status", ["awaiting_payment", "waived"]).select("appointment_id");
+    const payments = paymentUpdate.data;
     if (paymentUpdate.error) throw paymentUpdate.error;
-    if (!payments?.length && typeof checkout?.attributes?.reference_number === "string") {
-      const { data: appointment, error: appointmentLookupError } = await admin.from("appointments").select("id").eq("reference_no", checkout.attributes.reference_number).maybeSingle();
-      if (appointmentLookupError) throw appointmentLookupError;
-      if (appointment) {
-        const fallback = await admin.from("payments")
-          .update({ status: "paid", paid_at: new Date().toISOString(), paymongo_payment_id: checkoutId, metadata: { kind: "reservation_fee", checkout_session: checkout, credited_to_visit: true } })
-          .eq("appointment_id", appointment.id)
-          .in("status", ["awaiting_payment", "waived"])
-          .select("appointment_id");
-        if (fallback.error) throw fallback.error;
-        payments = fallback.data;
-      }
-    }
     const appointmentIds = (payments || []).map((payment) => payment.appointment_id).filter(Boolean);
     if (appointmentIds.length) {
       const { data: confirmedAppointments, error: appointmentError } = await admin

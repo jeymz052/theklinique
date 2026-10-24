@@ -1,6 +1,7 @@
 import { createClient, type User } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import { normalizeLandingSocialContent } from "@/lib/landing-social";
+import { MediaValidationError, preparePublicMedia } from "@/lib/mediaUpload";
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -51,6 +52,23 @@ export async function PATCH(request: Request) {
 
 export async function POST(request: Request) {
   const user = await userFor(request); if (!await canManage(user)) return NextResponse.json({ error: "Clinic staff access is required." }, { status: 403 });
-  try { const form = await request.formData(); const file = form.get("file"); if (!(file instanceof File)) return NextResponse.json({ error: "Choose an image, GIF, or video." }, { status: 400 }); if (file.size > 50 * 1024 * 1024) return NextResponse.json({ error: "Media must be 50 MB or smaller." }, { status: 400 }); const allowed = ["image/jpeg","image/png","image/webp","image/gif","video/mp4","video/webm"]; if (!allowed.includes(file.type)) return NextResponse.json({ error: "Use JPG, PNG, WebP, GIF, MP4, or WebM." }, { status: 400 }); const extension = file.name.split(".").pop()?.replace(/[^a-z0-9]/gi, "") || "bin"; const path = `${user!.id}/${Date.now()}-${crypto.randomUUID()}.${extension}`; const bytes = new Uint8Array(await file.arrayBuffer()); const { error } = await admin().storage.from("landing-media").upload(path, bytes, { contentType: file.type, upsert: false }); if (error) throw error; const { data } = admin().storage.from("landing-media").getPublicUrl(path); return NextResponse.json({ url: data.publicUrl, path, type: file.type.startsWith("video/") ? "video" : "image", alt: file.name.replace(/\.[^.]+$/, "") }, { status: 201 }); }
-  catch (error) { console.error("Unable to upload landing media:", error); return NextResponse.json({ error: "Unable to upload media. Apply the website-content migration first." }, { status: 500 }); }
+  try {
+    const form = await request.formData();
+    const file = form.get("file");
+    if (!(file instanceof File)) return NextResponse.json({ error: "Choose an image, GIF, or video." }, { status: 400 });
+    const media = await preparePublicMedia(file);
+    const path = `${user!.id}/${Date.now()}-${crypto.randomUUID()}.${media.extension}`;
+    const { error } = await admin().storage.from("landing-media").upload(path, media.bytes, {
+      contentType: media.contentType,
+      cacheControl: "31536000",
+      upsert: false,
+    });
+    if (error) throw error;
+    const { data } = admin().storage.from("landing-media").getPublicUrl(path);
+    return NextResponse.json({ url: data.publicUrl, path, type: media.contentType.startsWith("video/") ? "video" : "image", alt: file.name.replace(/\.[^.]+$/, "") }, { status: 201 });
+  } catch (error) {
+    if (error instanceof MediaValidationError) return NextResponse.json({ error: error.message }, { status: 400 });
+    console.error("Unable to upload landing media:", error);
+    return NextResponse.json({ error: "Unable to upload media. Apply the website-content migration first." }, { status: 500 });
+  }
 }

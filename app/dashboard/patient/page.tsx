@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -16,16 +16,22 @@ import LiveClinicStatus from "@/app/components/LiveClinicStatus";
 import AccountHelpHub from "@/app/components/AccountHelpHub";
 import PatientPaymentsPage from "@/app/components/PatientPaymentsPage";
 import BasicSettingsWorkspace from "@/app/components/BasicSettingsWorkspace";
+import PatientOnlineConsultations from "@/app/components/PatientOnlineConsultations";
+import MedicalDocumentsWorkspace from "@/app/components/MedicalDocumentsWorkspace";
 import ClinicCalendar from "@/app/components/ClinicCalendar";
 import { blockedDateAnnouncement, groupBlockedDates, type PublicBlockedDate } from "@/lib/blockedDates";
+import { clinicalApi } from "@/lib/clinicalApi";
+import type { MedicalDocument } from "@/lib/consultation";
 
 type NavSection = "portal" | "appointments";
-type PatientView = "overview" | "documents" | "history" | "book" | "my-appts" | "calendar" | "payments" | "account-help" | "profile" | "settings";
+type PatientView = "overview" | "online" | "documents" | "history" | "book" | "my-appts" | "calendar" | "payments" | "account-help" | "profile" | "settings";
+const patientViewTitles: Record<PatientView, string> = { overview: "Portal overview", online: "Online consultation", documents: "Medical documents", history: "Consultation history", book: "Book an appointment", "my-appts": "My appointments", calendar: "Calendar", payments: "Online payments", "account-help": "Account & help", profile: "Profile", settings: "Settings" };
 
 export default function PatientDashboard() {
   const router = useRouter();
   const { user, loading: authLoading } = useRoleAuth(["patient"]);
   const [view, setView] = useState<PatientView>("overview");
+  const body = useRef<HTMLDivElement>(null);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [openSections, setOpenSections] = useState<NavSection[]>(["portal", "appointments"]);
   const [signingOut, setSigningOut] = useState(false);
@@ -38,6 +44,23 @@ export default function PatientDashboard() {
   const [bookingServiceSlug, setBookingServiceSlug] = useState<string | null>(null);
   const [bookingParentId, setBookingParentId] = useState<string | null>(null);
   const [blockedDates, setBlockedDates] = useState<PublicBlockedDate[]>([]);
+  const [releasedDocuments, setReleasedDocuments] = useState<MedicalDocument[]>([]);
+
+  useEffect(() => {
+    body.current?.scrollTo({ top: 0, behavior: "instant" });
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }, [view]);
+
+  useEffect(() => {
+    if (!user) return;
+    let active = true;
+    const refresh = () => clinicalApi("/api/medical-documents").then(result => {
+      if (active) setReleasedDocuments(result.documents || []);
+    }).catch(() => {});
+    void refresh();
+    window.addEventListener("focus", refresh);
+    return () => { active = false; window.removeEventListener("focus", refresh); };
+  }, [user, view]);
 
   const verifyReturnedPayment = useCallback(async function verifyPayment(appointmentId: string | null, attempt = 0) {
     try {
@@ -98,6 +121,9 @@ export default function PatientDashboard() {
       const accountView = params.get("view") as "profile" | "settings";
       window.history.replaceState({}, "", "/dashboard/patient");
       queueMicrotask(() => setView(accountView));
+    } else if (["online", "documents"].includes(params.get("view") || "")) {
+      const portalView = params.get("view") as "online" | "documents";
+      queueMicrotask(() => setView(portalView));
     } else if (params.get("view") === "book") {
       const requestedService = params.get("service");
       const requestedParent = params.get("parent");
@@ -181,8 +207,8 @@ export default function PatientDashboard() {
   const blockedPeriods = groupBlockedDates(blockedDates);
   const stats = [
     { icon: "fa-calendar-check",  label: "Appointments",    value: String(appointments.length), sub: `${upcomingAppointments.length} upcoming` },
-    { icon: "fa-notes-medical",   label: "Released Notes",  value: "0", sub: "Allowed by doctor"    },
-    { icon: "fa-prescription",    label: "Prescriptions",   value: "0", sub: "Open in documents"    },
+    { icon: "fa-notes-medical",   label: "Medical Documents", value: String(releasedDocuments.length), sub: "Released by doctor" },
+    { icon: "fa-prescription",    label: "Prescriptions", value: String(releasedDocuments.filter(document => document.document_type === "prescription").length), sub: "Open in documents" },
     { icon: "fa-file-invoice",    label: "Billing Records", value: String(appointments.length), sub: "Appointment receipts" },
   ];
 
@@ -195,7 +221,7 @@ export default function PatientDashboard() {
   }
 
   return (
-    <div className={`dk-root ${mobileNavOpen ? "mobile-nav-open" : ""}`}>
+    <div className={`dk-root patient-dashboard ${mobileNavOpen ? "mobile-nav-open" : ""}`}>
       <button type="button" className="dk-mobile-nav-overlay" aria-label="Close navigation" onClick={() => setMobileNavOpen(false)} />
       {/* SIDEBAR */}
       <aside className="dk-sidebar" onClick={(event) => {
@@ -230,6 +256,7 @@ export default function PatientDashboard() {
               <div className="dk-nav-items">
                 {[
                   { key: "overview",  icon: "fa-table-columns",    label: "Portal Overview"      },
+                  { key: "online", icon: "fa-video", label: "Online Consultation" },
                   { key: "documents", icon: "fa-file-medical",      label: "Medical Documents"    },
                   { key: "history",   icon: "fa-clock-rotate-left", label: "Consultation History" },
                 ].map((item) => (
@@ -316,18 +343,22 @@ export default function PatientDashboard() {
 
       {/* MAIN */}
       <main className="dk-main">
-        <header className="dk-topbar">
+        <header className="dk-topbar patient-topbar">
           <button type="button" className="dk-mobile-menu-trigger" aria-label="Open navigation" onClick={() => setMobileNavOpen(true)}>
             <i className="fa-solid fa-bars" />
           </button>
-          <p style={{ fontSize: "0.8rem", fontWeight: 700, color: "#0d0d0d" }}>Workspace</p>
+          <div className="patient-page-heading"><p className="dk-workspace-eyebrow">Patient portal</p><p className="dk-workspace-title">{patientViewTitles[view]}</p></div>
           <div className="dk-topbar-actions">
-            <AppointmentNotifications />
+            <AppointmentNotifications onOpenNotification={(href) => {
+              const target = new URL(href, window.location.origin).searchParams.get("view");
+              if (target === "documents" || target === "online") setView(target);
+              else window.location.assign(href);
+            }} />
             <DashboardAccountMenu name={patientDisplayName} role="Patient" email={user?.email} onSignOut={handleSignOut} signingOut={signingOut} onProfileClick={() => setView("profile")} onSettingsClick={() => setView("settings")} />
           </div>
         </header>
 
-        <div className="dk-body">
+        <div ref={body} className="dk-body">
           {dataError && view !== "book" && <p className="bk-form-error" role="alert">{dataError}</p>}
           {bookingNotice && <div className="dk-booking-notice" role="status"><i className="fa-solid fa-circle-info" /><span>{bookingNotice}</span><button type="button" onClick={() => setBookingNotice("")} aria-label="Dismiss"><i className="fa-solid fa-xmark" /></button></div>}
           {!dismissedBanner && blockedPeriods.length > 0 && view !== "book" && (
@@ -451,27 +482,13 @@ export default function PatientDashboard() {
                   <i className="fa-solid fa-calendar-plus" /> Book Now
                 </button>
               </div>
-              <PatientAppointments appointments={appointments} payingAppointmentId={payingAppointmentId} onPay={resumeReservationPayment} onVerify={verifyAppointmentPayment} onBook={() => setView("book")} rescheduleRequests={rescheduleRequests} onCancel={handleCancelAppointment} onReschedule={handleRescheduleAppointment} />
+              <PatientAppointments appointments={appointments} payingAppointmentId={payingAppointmentId} onPay={resumeReservationPayment} onVerify={verifyAppointmentPayment} onBook={() => setView("book")} onOnline={() => setView("online")} rescheduleRequests={rescheduleRequests} onCancel={handleCancelAppointment} onReschedule={handleRescheduleAppointment} />
             </>
           )}
           {view === "calendar" && <ClinicCalendar />}
 
-          {view === "documents" && (
-            <>
-              <div className="dk-welcome-card">
-                <div>
-                  <p className="dk-welcome-label">Documents</p>
-                  <p className="dk-welcome-title">Medical Documents</p>
-                  <p className="dk-welcome-sub">Consents, prescriptions and clinical files shared by Dr. Kharyl.</p>
-                </div>
-              </div>
-              <div className="dk-empty">
-                <div className="dk-empty-icon"><i className="fa-regular fa-folder-open" /></div>
-                <h3>No documents yet</h3>
-                <p>Documents released by your doctor will appear here after your first visit.</p>
-              </div>
-            </>
-          )}
+          {view === "documents" && <MedicalDocumentsWorkspace />}
+          {view === "online" && <PatientOnlineConsultations onBook={() => { setBookingServiceSlug("online-consultation"); setBookingParentId(null); setView("book"); }} onDocuments={() => setView("documents")} onPay={resumeReservationPayment} onVerify={verifyAppointmentPayment} payingId={payingAppointmentId} />}
 
           {view === "history" && (
             <>
@@ -501,10 +518,10 @@ export default function PatientDashboard() {
               <section className="dk-booking-heading" aria-labelledby="patient-booking-title">
                 <div>
                   <p className="dk-welcome-label">Book Appointment</p>
-                  <h1 id="patient-booking-title">Schedule your clinic visit</h1>
-                  <p>Choose your treatments, select an available schedule, and confirm your reservation.</p>
+                  <h1 id="patient-booking-title">Schedule your visit</h1>
+                  <p>Choose a clinic or online consultation, or book a treatment at an available time.</p>
                 </div>
-                <span className="dk-booking-type"><i className="fa-solid fa-hospital" /> Clinic Visit</span>
+                <span className="dk-booking-type"><i className="fa-solid fa-calendar-check" /> Clinic & online visits</span>
               </section>
               <section className="dk-embedded-booking" aria-label="Appointment booking form">
                 <BookingForm embedded initialServiceSlug={bookingServiceSlug} parentAppointmentId={bookingParentId} />

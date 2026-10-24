@@ -12,6 +12,7 @@ export interface Appointment {
   phone: string;
   service: string;
   serviceCategory: string;
+  consultationMode: "clinic" | "online";
   visitKind: "standard" | "consultation_follow_up";
   parentAppointmentId: string | null;
   paymentExpiresAt: string | null;

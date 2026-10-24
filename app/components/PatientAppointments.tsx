@@ -8,6 +8,7 @@ type PatientAppointmentsProps = {
   appointments: Appointment[];
   payingAppointmentId: string | null;
   onBook: () => void;
+  onOnline: () => void;
   onPay: (appointmentId: string) => void;
   onVerify: (appointmentId: string) => void;
   rescheduleRequests: RescheduleRequest[];
@@ -19,7 +20,7 @@ type AppointmentFilter = "upcoming" | "history";
 
 type Slot = { time: string; label: string; status: "available" | "unavailable" | "past" };
 
-export default function PatientAppointments({ appointments, payingAppointmentId, onBook, onPay, onVerify, rescheduleRequests, onCancel, onReschedule }: PatientAppointmentsProps) {
+export default function PatientAppointments({ appointments, payingAppointmentId, onBook, onOnline, onPay, onVerify, rescheduleRequests, onCancel, onReschedule }: PatientAppointmentsProps) {
   const [filter, setFilter] = useState<AppointmentFilter>("upcoming");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [action, setAction] = useState<{ type: "cancel" | "reschedule"; appointment: Appointment } | null>(null);
@@ -77,11 +78,12 @@ export default function PatientAppointments({ appointments, payingAppointmentId,
             <div className="pa-date"><strong>{new Date(`${appointment.date}T00:00:00`).toLocaleDateString("en-PH", { day: "2-digit" })}</strong><span>{new Date(`${appointment.date}T00:00:00`).toLocaleDateString("en-PH", { month: "short" })}</span></div>
             <div className="pa-card-main">
               <div className="pa-card-title"><div><small>{appointment.referenceNo}</small><h3>{appointment.service}</h3></div><span className={`dk-badge dk-badge-${appointment.status}`}>{appointmentStatusLabel(appointment)}</span></div>
-              <div className="pa-meta"><span><i className="fa-regular fa-clock" /> {appointment.time}</span><span><i className="fa-solid fa-user-doctor" /> Dr. Kharyl</span><span><i className="fa-solid fa-location-dot" /> The Klinique CDO</span></div>
-              {awaitingPayment && <p className="pa-payment-note"><i className="fa-solid fa-circle-info" /> Your slot is reserved but becomes confirmed only after the reservation fee is paid.</p>}
+              <div className="pa-meta"><span><i className="fa-regular fa-clock" /> {appointment.time}</span><span><i className="fa-solid fa-user-doctor" /> Dr. Kharyl</span><span><i className={appointment.consultationMode === "online" ? "fa-solid fa-video" : "fa-solid fa-location-dot"} /> {appointment.consultationMode === "online" ? "Online consultation" : "The Klinique CDO"}</span></div>
+              {awaitingPayment && <p className="pa-payment-note"><i className="fa-solid fa-circle-info" /> {appointment.consultationMode === "online" ? "Pay the full PHP 600 online consultation fee to confirm your slot." : "Your slot is reserved but becomes confirmed only after the reservation fee is paid."}</p>}
               {pendingReschedule && <p className="pa-reschedule-note"><i className="fa-regular fa-clock" /> Reschedule requested for {new Date(`${pendingReschedule.requestedDate}T00:00:00`).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })} at {pendingReschedule.requestedTime}. Your current schedule remains confirmed until approved.</p>}
             </div>
             <div className="pa-actions">
+              {appointment.consultationMode === "online" && appointment.status === "confirmed" && <button type="button" onClick={onOnline} className="dk-btn dk-btn-pink dk-btn-sm"><i aria-hidden="true" className="fa-solid fa-video" /> Open online consultation</button>}
               {awaitingPayment && <button type="button" className="dk-btn dk-btn-pink dk-btn-sm" onClick={() => onVerify(appointment.id)}><i className="fa-solid fa-arrows-rotate" /> Verify payment</button>}
               {awaitingPayment && <button type="button" className="dk-btn dk-btn-outline dk-btn-sm" disabled={payingAppointmentId === appointment.id} onClick={() => onPay(appointment.id)}>{payingAppointmentId === appointment.id ? <><i className="fa-solid fa-spinner fa-spin" /> Opening</> : <><i className="fa-solid fa-qrcode" /> Pay again</>}</button>}
               {appointment.status === "confirmed" && !pendingReschedule && <button type="button" className="dk-btn dk-btn-outline dk-btn-sm" onClick={() => openAction("reschedule", appointment)}><i className="fa-solid fa-calendar-days" /> Reschedule</button>}
@@ -95,8 +97,8 @@ export default function PatientAppointments({ appointments, payingAppointmentId,
       {selected && <div className="pa-detail-overlay" role="dialog" aria-modal="true" aria-labelledby="pa-detail-title" onClick={(event) => event.target === event.currentTarget && setSelectedId(null)}>
         <section className="pa-detail-card">
           <header><div><small>Appointment {selected.referenceNo}</small><h2 id="pa-detail-title">{selected.service}</h2></div><button type="button" onClick={() => setSelectedId(null)} aria-label="Close details"><i className="fa-solid fa-xmark" /></button></header>
-          <div className="pa-detail-status"><span className={`dk-badge dk-badge-${selected.status}`}>{appointmentStatusLabel(selected)}</span><p>{selected.status === "pending" ? "Complete payment or wait for clinic confirmation." : selected.status === "confirmed" ? "Your clinic visit is confirmed." : selected.status === "completed" ? "This appointment has been completed." : selected.status === "no_show" ? "The clinic marked this appointment as a no-show." : "This appointment was cancelled."}</p></div>
-          <div className="pa-detail-grid"><div><span>Date</span><strong>{new Date(`${selected.date}T00:00:00`).toLocaleDateString("en-PH", { dateStyle: "long" })}</strong></div><div><span>Time</span><strong>{selected.time}</strong></div><div><span>Doctor</span><strong>Dr. Kharyl</strong></div><div><span>Estimated treatment total</span><strong>₱{selected.amount.toLocaleString()}</strong></div></div>
+          <div className="pa-detail-status"><span className={`dk-badge dk-badge-${selected.status}`}>{appointmentStatusLabel(selected)}</span><p>{selected.status === "pending" ? "Complete payment or wait for clinic confirmation." : selected.status === "confirmed" ? selected.consultationMode === "online" ? "Your online consultation is confirmed. Join from Online Consultation in your portal." : "Your clinic visit is confirmed." : selected.status === "completed" ? "This appointment has been completed." : selected.status === "no_show" ? "The clinic marked this appointment as a no-show." : "This appointment was cancelled."}</p></div>
+          <div className="pa-detail-grid"><div><span>Date</span><strong>{new Date(`${selected.date}T00:00:00`).toLocaleDateString("en-PH", { dateStyle: "long" })}</strong></div><div><span>Time</span><strong>{selected.time}</strong></div><div><span>Doctor</span><strong>Dr. Kharyl</strong></div><div><span>{selected.consultationMode === "online" ? "Online consultation fee" : "Estimated treatment total"}</span><strong>₱{selected.amount.toLocaleString()}</strong></div></div>
           <div className="pa-lifecycle" aria-label="Appointment progress"><div className="done"><i className="fa-solid fa-check" /><span>Booked</span></div><i /><div className={["confirmed", "completed", "no_show"].includes(selected.status) ? "done" : selected.status === "pending" ? "current" : ""}><i className="fa-solid fa-qrcode" /><span>Confirmed</span></div><i /><div className={selected.status === "completed" ? "done" : ""}><i className="fa-solid fa-stethoscope" /><span>Visit complete</span></div></div>
           {selected.notes && <div className="pa-notes"><span>Your notes</span><p>{selected.notes}</p></div>}
           {selected.status === "pending" && selected.paymentStatus === "awaiting_payment" && <div className="pa-detail-actions"><button type="button" className="dk-btn dk-btn-pink" onClick={() => onVerify(selected.id)}><i className="fa-solid fa-arrows-rotate" /> Verify payment</button><button type="button" className="dk-btn dk-btn-outline" onClick={() => onPay(selected.id)}><i className="fa-solid fa-qrcode" /> Pay again</button></div>}
