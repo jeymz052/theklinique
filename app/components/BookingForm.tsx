@@ -209,6 +209,8 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
   const [resumeReviewAfterAuth, setResumeReviewAfterAuth] = useState(false);
   const [intakeQuestions,setIntakeQuestions]=useState<IntakeQuestion[]>([]);
   const [customAnswers,setCustomAnswers]=useState<Record<string,string>>({});
+  const [treatmentSearch, setTreatmentSearch] = useState("");
+  const [packageSearch, setPackageSearch] = useState("");
 
   const service = catalogView === "packages"
     ? catalogServices.find((item) => item.slug === PACKAGE_BOOKING_SERVICE_SLUG)
@@ -237,7 +239,16 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
   const bookedTreatments = service && !isPackageOnly ? [service, ...cartTreatments] : [];
   const selectedCategoryRecord = categories.find((item) => item.id === service?.category_id);
   const isConsultationOnly = selectedCategoryRecord?.slug === "consultations";
-  const visibleTreatmentServices = catalogServices.filter((item) => item.slug !== PACKAGE_BOOKING_SERVICE_SLUG && categories.find((category) => category.id === item.category_id)?.slug !== "consultations" && (!selectedCategory || item.category_id === selectedCategory));
+  const visibleTreatmentServices = catalogServices.filter((item) => {
+    if (item.slug === PACKAGE_BOOKING_SERVICE_SLUG) return false;
+    if (categories.find((category) => category.id === item.category_id)?.slug === "consultations") return false;
+    if (selectedCategory && item.category_id !== selectedCategory) return false;
+    if (treatmentSearch.trim()) {
+      const needle = treatmentSearch.toLowerCase();
+      return item.name.toLowerCase().includes(needle) || item.subcategory.toLowerCase().includes(needle) || (item.description || "").toLowerCase().includes(needle);
+    }
+    return true;
+  });
   const treatmentTotal = (isOnlineConsultation ? ONLINE_CONSULTATION_FEE : isPackageOnly ? 0 : service?.price || 0) + cartTreatments.reduce((sum, item) => sum + Number(item.price), 0);
   const packageTotal = cartProducts.reduce((sum, item) => sum + Number(item.price), 0);
   const cartItemCount = (service && !isPackageOnly ? 1 : 0) + cartTreatments.length + cartProducts.length;
@@ -808,6 +819,11 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
 
               {bookingType === "treatment" && catalogView === "treatments" && <section className="bk-treatment-catalog">
                 <div className="bk-treatment-catalog-head"><div><span className="bk-label"><i className="fa-solid fa-kit-medical" /> Treatment catalog</span><p>Add one or more procedures to your appointment.</p></div><span>{cartTreatments.length + (service ? 1 : 0)} selected</span></div>
+                <label className="bk-catalog-search">
+                  <i className="fa-solid fa-magnifying-glass" />
+                  <input type="search" placeholder="Search treatments..." value={treatmentSearch} onChange={(e) => setTreatmentSearch(e.target.value)} />
+                  {treatmentSearch && <button type="button" onClick={() => setTreatmentSearch("")} aria-label="Clear search"><i className="fa-solid fa-xmark" /></button>}
+                </label>
                 <div className="bk-category-chips" role="group" aria-label="Filter treatment categories">
                   <button type="button" className={!selectedCategory ? "active" : ""} onClick={() => setSelectedCategory(null)}>All treatments</button>
                   {categories.filter((category) => !["consultations", "package-bookings"].includes(category.slug)).map((category) => <button type="button" key={category.id} className={selectedCategory === category.id ? "active" : ""} onClick={() => setSelectedCategory(category.id)}>{category.name}</button>)}
@@ -826,18 +842,26 @@ export default function BookingForm({ isModal = false, embedded = false, onClose
               </section>}
               {bookingType === "treatment" && catalogView === "packages" && <section className="bk-treatment-catalog bk-package-catalog">
                 <div className="bk-treatment-catalog-head"><div><span className="bk-label"><i className="fa-solid fa-gift" /> Glow Plans (Packages)</span><p>Select one or more packages for your appointment.</p></div><span>{cartProducts.length} selected</span></div>
+                <label className="bk-catalog-search">
+                  <i className="fa-solid fa-magnifying-glass" />
+                  <input type="search" placeholder="Search packages..." value={packageSearch} onChange={(e) => setPackageSearch(e.target.value)} />
+                  {packageSearch && <button type="button" onClick={() => setPackageSearch("")} aria-label="Clear search"><i className="fa-solid fa-xmark" /></button>}
+                </label>
                 <div className="bk-package-groups">
                   {packageGroups.map((group) => {
-                    const expanded = expandedPackageGroups.includes(group.key);
+                    const needle = packageSearch.toLowerCase().trim();
+                    const filteredProducts = needle ? group.products.filter((product) => product.name.toLowerCase().includes(needle) || (product.description || "").toLowerCase().includes(needle) || product.subcategory.toLowerCase().includes(needle) || product.category.toLowerCase().includes(needle)) : group.products;
+                    if (needle && filteredProducts.length === 0) return null;
+                    const expanded = expandedPackageGroups.includes(group.key) || Boolean(needle);
                     const selectedCount = group.products.filter((product) => cartProductIds.includes(product.id)).length;
                     return <section className={`bk-package-group ${expanded ? "is-open" : ""}`} key={group.key}>
                       <button type="button" className="bk-package-group-toggle" aria-expanded={expanded} aria-controls={`package-group-${group.key.replace(/[^a-zA-Z0-9_-]/g, "-")}`} onClick={() => setExpandedPackageGroups((current) => current.includes(group.key) ? current.filter((key) => key !== group.key) : [...current, group.key])}>
                         <span className="bk-package-group-icon"><i className="fa-solid fa-wand-magic-sparkles" /></span>
                         <span><small>{group.category}</small><strong>{group.label}</strong></span>
-                        <span className="bk-package-group-meta">{selectedCount > 0 && <b>{selectedCount} selected</b>}<small>{group.products.length} option{group.products.length === 1 ? "" : "s"}</small><i className="fa-solid fa-chevron-down" /></span>
+                        <span className="bk-package-group-meta">{selectedCount > 0 && <b>{selectedCount} selected</b>}<small>{filteredProducts.length} option{filteredProducts.length === 1 ? "" : "s"}</small><i className="fa-solid fa-chevron-down" /></span>
                       </button>
                       {expanded && <div className="bk-catalog-card-grid" id={`package-group-${group.key.replace(/[^a-zA-Z0-9_-]/g, "-")}`}>
-                        {group.products.map((product) => {
+                        {filteredProducts.map((product) => {
                           const selected = cartProductIds.includes(product.id);
                           return <article key={product.id} className={`bk-catalog-card ${selected ? "selected" : ""}`}>
                             <div className="bk-catalog-card-icon"><i className="fa-solid fa-wand-magic-sparkles" /></div>
