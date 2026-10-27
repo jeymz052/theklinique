@@ -111,3 +111,25 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unable to save this patient record. Check that the patient progress migration is applied." }, { status: 500 });
   }
 }
+
+export async function DELETE(request: Request) {
+  try {
+    const auth = await clinicalUser(request);
+    if (!auth) return NextResponse.json({ error: "Sign in is required." }, { status: 401 });
+    if (!auth.isDoctor) return NextResponse.json({ error: "Doctor access is required." }, { status: 403 });
+    const { photoId, clientId } = await request.json() as { photoId?: string; clientId?: string };
+    if (!photoId || !uuid.test(photoId) || !clientId || !uuid.test(clientId)) return NextResponse.json({ error: "Invalid photo or patient ID." }, { status: 400 });
+    const db = clinicalDatabase();
+    const photo = await db.from("patient_photos").select("id,storage_path,kind").eq("id", photoId).eq("client_id", clientId).maybeSingle();
+    if (photo.error) throw photo.error;
+    if (!photo.data) return NextResponse.json({ error: "Photo not found." }, { status: 404 });
+    if (photo.data.kind === "profile") return NextResponse.json({ error: "Use the replace button to change the profile photo." }, { status: 400 });
+    const { error: dbError } = await db.from("patient_photos").delete().eq("id", photoId);
+    if (dbError) throw dbError;
+    if (photo.data.storage_path) await db.storage.from(PATIENT_PHOTO_BUCKET).remove([photo.data.storage_path]);
+    return NextResponse.json({ ok: true }, { headers: privateHeaders });
+  } catch (error) {
+    console.error("Deleting patient photo:", error);
+    return NextResponse.json({ error: "Unable to delete this photo." }, { status: 500 });
+  }
+}

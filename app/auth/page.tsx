@@ -16,8 +16,8 @@ const VERIFICATION_LINK_HOURS = 1;
 const RESEND_COOLDOWN_SECONDS = 60;
 
 function passwordValidationMessage(value: string) {
-  if (value.length < 10 || !/[a-z]/.test(value) || !/[A-Z]/.test(value) || !/\d/.test(value) || !/[^A-Za-z0-9]/.test(value)) {
-    return "Password must be at least 10 characters and include uppercase, lowercase, number, and special character.";
+  if (value.length < 6 || !/[a-z]/.test(value) || !/[A-Z]/.test(value) || !/\d/.test(value) || !/[^A-Za-z0-9]/.test(value)) {
+    return "Password must be at least 6 characters and include uppercase, lowercase, number, and special character.";
   }
   return "";
 }
@@ -738,7 +738,7 @@ export function AuthView({ initialMode = "signin" }: { initialMode?: AuthMode })
                     onChange={(e) => { setPassword(e.target.value); clearFieldError("password"); clearFieldError("confirmPassword"); }}
                     required
                     autoComplete="new-password"
-                    minLength={10}
+                    minLength={6}
                     aria-invalid={Boolean(fieldErrors.password)}
                     aria-describedby={fieldErrors.password ? "signup-password-error" : undefined}
                   />
@@ -768,7 +768,7 @@ export function AuthView({ initialMode = "signin" }: { initialMode?: AuthMode })
                     onChange={(e) => { setConfirmPassword(e.target.value); clearFieldError("confirmPassword"); }}
                     required
                     autoComplete="new-password"
-                    minLength={10}
+                    minLength={6}
                     aria-invalid={Boolean(fieldErrors.confirmPassword)}
                     aria-describedby={fieldErrors.confirmPassword ? "signup-confirm-error" : undefined}
                   />
@@ -944,7 +944,7 @@ export function AuthView({ initialMode = "signin" }: { initialMode?: AuthMode })
                     value={password}
                     onChange={(e) => { setPassword(e.target.value); clearFieldError("password"); clearFieldError("confirmPassword"); }}
                     required
-                    minLength={10}
+                    minLength={6}
                     autoComplete="new-password"
                     aria-invalid={Boolean(fieldErrors.password)}
                     aria-describedby={fieldErrors.password ? "reset-password-error" : undefined}
@@ -971,7 +971,7 @@ export function AuthView({ initialMode = "signin" }: { initialMode?: AuthMode })
                     value={confirmPassword}
                     onChange={(e) => { setConfirmPassword(e.target.value); clearFieldError("confirmPassword"); }}
                     required
-                    minLength={10}
+                    minLength={6}
                     autoComplete="new-password"
                     aria-invalid={Boolean(fieldErrors.confirmPassword)}
                     aria-describedby={fieldErrors.confirmPassword ? "reset-confirm-error" : undefined}
